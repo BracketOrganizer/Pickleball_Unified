@@ -397,7 +397,7 @@ import {
 } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js';
 import {
   getFirestore, doc, getDoc, setDoc, updateDoc, deleteDoc, onSnapshot,
-  collection, serverTimestamp, addDoc, getDocs
+  collection, serverTimestamp, addDoc, getDocs, arrayUnion, arrayRemove
 } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js';
 
 const firebaseConfig = {
@@ -458,6 +458,46 @@ function startLiveWatch() {
   }, (e) => console.warn('startLiveWatch error:', e));
 }
 startLiveWatch();
+
+// ── Noms de joueurs déjà utilisés (tous tournois confondus), pour suggestion
+//    automatique à la saisie (datalist) et éviter les doublons d'orthographe
+//    qui fausseraient le Bilan de saison (les entrées y sont regroupées par
+//    nom exact). La liste grandit au fil des sauvegardes (voir
+//    fbRegisterKnownPlayerNames, appelée par saveData) et n'est jamais
+//    nettoyée automatiquement. ──
+let knownPlayerNames = [];
+function refreshKnownPlayersDatalist() {
+  const dl = document.getElementById('knownPlayersDatalist');
+  if (!dl) return;
+  dl.innerHTML = knownPlayerNames
+    .slice().sort((a, b) => a.localeCompare(b, 'fr'))
+    .map(n => `<option value="${n.replace(/"/g, '&quot;')}">`).join('');
+}
+function startKnownPlayersWatch() {
+  onSnapshot(doc(db, 'tournamentStatus', 'knownPlayers'), (snap) => {
+    knownPlayerNames = (snap.exists() && Array.isArray(snap.data().names)) ? snap.data().names : [];
+    refreshKnownPlayersDatalist();
+  }, (e) => console.warn('startKnownPlayersWatch error:', e));
+}
+startKnownPlayersWatch();
+
+// Ajoute à la liste permanente les nouveaux noms tapés (hors valeurs par
+// défaut "Joueur N"), sans jamais rien supprimer. Appelée depuis saveData()
+// (script classique) à chaque sauvegarde des champs joueurs.
+window.fbRegisterKnownPlayerNames = async function (names) {
+  const cleaned = [...new Set(
+    (names || [])
+      .map(n => (n || '').trim())
+      .filter(n => n && !/^Joueur \d+$/.test(n))
+  )];
+  if (cleaned.length === 0) return;
+  if (!isScorer()) return;
+  try {
+    await setDoc(doc(db, 'tournamentStatus', 'knownPlayers'), { names: arrayUnion(...cleaned) }, { merge: true });
+  } catch (e) {
+    console.warn('fbRegisterKnownPlayerNames error:', e);
+  }
+};
 
 // ══════════════════════════════════════════════════════════
 // INSCRIPTIONS (ouverture/fermeture par l'admin, heure limite, quota)
@@ -1163,6 +1203,124 @@ window.saveEditSeasonSession = async function (terrains, index) {
     showNotice('Séance modifiée');
     loadSeasonBilan();
   } catch (e) { alert('Erreur : ' + e.message); }
+};
+
+// Fusion de doublons (ex. "Jean Dupont" / "Jean Dupond") dans le Bilan de
+// saison : renomme toutes les occurrences d'un nom en un autre, sur les 3
+// configurations de terrains à la fois, en cumulant les statistiques si les
+// deux noms apparaissent déjà dans une même séance archivée. Met aussi à
+// jour la liste des noms connus (suggestion à la saisie) pour que le nom
+// abandonné ne soit plus proposé.
+window.openMergePlayerNamesModal = async function () {
+  if (!isAdmin()) return;
+  let names = new Set(knownPlayerNames || []);
+  try {
+    for (const t of [3, 4, 5]) {
+      const snap = await getDoc(doc(db, 'seasonArchive', 'terrain_' + t));
+      const sessions = snap.exists() && Array.isArray(snap.data().sessions) ? snap.data().sessions : [];
+      sessions.forEach(sess => (sess.entries || []).forEach(e => { if (e.name) names.add(e.name); }));
+    }
+  } catch (e) { /* on continue avec ce qu'on a (knownPlayerNames) */ }
+  const sorted = [...names].sort((a, b) => a.localeCompare(b, 'fr'));
+  if (sorted.length < 2) {
+    alert('Pas assez de noms différents pour proposer une fusion.');
+    return;
+  }
+  const optionsHtml = sorted.map(n => `<option value="${n.replace(/"/g, '&quot;')}">${n}</option>`).join('');
+  const overlay = document.createElement('div');
+  overlay.className = 'modal-overlay';
+  overlay.id = 'mergePlayerNamesModal';
+  overlay.innerHTML = `
+    <div class="modal-box" style="max-width:420px">
+      <h3><i class="fas fa-code-merge"></i> Fusionner deux noms</h3>
+      <p style="font-size:0.8rem;color:#777;margin:4px 0 10px">
+        Corrige une faute d'orthographe dans le Bilan de saison : toutes les séances archivées
+        où le nom à corriger apparaît seront réécrites avec le nom correct (les statistiques
+        sont cumulées si les deux noms figurent déjà dans une même séance).
+      </p>
+      <div style="margin-bottom:10px">
+        <label style="font-size:0.8rem;font-weight:600">Nom à corriger (sera remplacé)</label><br>
+        <select id="mergeFromName" style="width:100%;padding:6px;margin-top:4px">${optionsHtml}</select>
+      </div>
+      <div style="margin-bottom:10px">
+        <label style="font-size:0.8rem;font-weight:600">Nom correct à conserver</label><br>
+        <select id="mergeToName" style="width:100%;padding:6px;margin-top:4px">${optionsHtml}</select>
+      </div>
+      <div style="display:flex;gap:8px;margin-top:14px">
+        <button class="btn secondary" style="flex:1;margin:0" onclick="closeMergePlayerNamesModal()">Annuler</button>
+        <button class="btn success" style="flex:1;margin:0" onclick="confirmMergePlayerNames()">Fusionner</button>
+      </div>
+    </div>`;
+  document.body.appendChild(overlay);
+};
+
+window.closeMergePlayerNamesModal = function () {
+  const el = document.getElementById('mergePlayerNamesModal');
+  if (el) el.remove();
+};
+
+window.confirmMergePlayerNames = async function () {
+  if (!isAdmin()) return;
+  const fromEl = document.getElementById('mergeFromName');
+  const toEl = document.getElementById('mergeToName');
+  const oldName = fromEl ? fromEl.value : '';
+  const newName = toEl ? toEl.value : '';
+  if (!oldName || !newName || oldName === newName) {
+    alert('Choisissez deux noms différents.');
+    return;
+  }
+  if (!confirm(`Remplacer "${oldName}" par "${newName}" dans tout le bilan de saison ? Cette action est irréversible.`)) return;
+  try {
+    for (const t of [3, 4, 5]) {
+      const ref = doc(db, 'seasonArchive', 'terrain_' + t);
+      const snap = await getDoc(ref);
+      if (!snap.exists()) continue;
+      const sessions = Array.isArray(snap.data().sessions) ? snap.data().sessions : [];
+      let changed = false;
+      const newSessions = sessions.map(sess => {
+        const entries = sess.entries || [];
+        const oldIdx = entries.findIndex(e => e.name === oldName);
+        if (oldIdx === -1) return sess;
+        changed = true;
+        const newIdx = entries.findIndex(e => e.name === newName);
+        const oldEntry = entries[oldIdx];
+        let newEntries;
+        if (newIdx === -1) {
+          // Pas d'entrée existante sous le nom correct dans cette séance : simple renommage.
+          newEntries = entries.map((e, i) => i === oldIdx ? Object.assign({}, e, { name: newName }) : e);
+        } else {
+          // Les deux noms coexistent dans cette séance : on cumule les stats et on retire le doublon.
+          const target = entries[newIdx];
+          const merged = {
+            name: newName,
+            points: (target.points || 0) + (oldEntry.points || 0),
+            matches: (target.matches || 0) + (oldEntry.matches || 0),
+            wins: (target.wins || 0) + (oldEntry.wins || 0),
+            draws: (target.draws || 0) + (oldEntry.draws || 0),
+            losses: (target.losses || 0) + (oldEntry.losses || 0),
+            scored: (target.scored || 0) + (oldEntry.scored || 0),
+            conceded: (target.conceded || 0) + (oldEntry.conceded || 0)
+          };
+          newEntries = entries
+            .filter((e, i) => i !== oldIdx && i !== newIdx)
+            .concat([merged]);
+        }
+        return Object.assign({}, sess, { entries: newEntries });
+      });
+      if (changed) {
+        await setDoc(ref, { terrains: t, sessions: newSessions }, { merge: true });
+      }
+    }
+    // Le nom abandonné ne doit plus être suggéré à la saisie.
+    try {
+      await setDoc(doc(db, 'tournamentStatus', 'knownPlayers'), { names: arrayRemove(oldName) }, { merge: true });
+      await setDoc(doc(db, 'tournamentStatus', 'knownPlayers'), { names: arrayUnion(newName) }, { merge: true });
+    } catch (e) { console.warn('maj knownPlayers après fusion:', e); }
+
+    closeMergePlayerNamesModal();
+    showNotice(`"${oldName}" fusionné avec "${newName}"`);
+    loadSeasonBilan();
+  } catch (e) { alert('Erreur lors de la fusion : ' + e.message); }
 };
 
 // ══════════════════════════════════════════════════════════
@@ -1909,6 +2067,7 @@ window.adminDeleteUser = async function (uid, name) {
     <div class="card" data-role="scorer">
       <span class="card-title"><i class="fas fa-user-friends"></i> Joueurs (1-20)</span>
       <div id="playersInputs"></div>
+      <datalist id="knownPlayersDatalist"></datalist>
     </div>
 
     <div class="card" id="positionsCard">
@@ -1997,7 +2156,10 @@ window.adminDeleteUser = async function (uid, name) {
     <div class="card">
       <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:6px">
         <span class="card-title"><i class="fas fa-medal"></i> Bilan de saison</span>
-        <button class="btn success no-print" style="margin:0" onclick="archiveCurrentSessionToSeason()"><i class="fas fa-box-archive"></i> Archiver cette séance</button>
+        <span style="display:flex;gap:6px;flex-wrap:wrap">
+          <button class="btn secondary no-print" style="margin:0" onclick="openMergePlayerNamesModal()"><i class="fas fa-code-merge"></i> Fusionner des doublons</button>
+          <button class="btn success no-print" style="margin:0" onclick="archiveCurrentSessionToSeason()"><i class="fas fa-box-archive"></i> Archiver cette séance</button>
+        </span>
       </div>
       <p style="font-size:0.8rem;color:#777;margin-top:6px">
         Analyse cumulée de la saison (présences, points cumulés, moyennes), calculée séparément pour
@@ -2522,7 +2684,7 @@ function buildPlayerInputs() {
     wrapper.innerHTML = `
       <div class="player-number">${i}</div>
       <input type="text" class="player-input" id="player${i}" placeholder="Joueur ${i}" 
-             value="Joueur ${i}">
+             value="Joueur ${i}" list="knownPlayersDatalist" autocomplete="off">
     `;
     container.appendChild(wrapper);
   }
@@ -3744,6 +3906,13 @@ function saveData() {
   for (let i = 1; i <= 20; i++) {
     const el = document.getElementById('player' + i);
     if (el) players[i] = el.value;
+  }
+
+  // Alimente la liste permanente des noms de joueurs connus (suggestion
+  // automatique à la saisie dans les prochains tournois), sans bloquer la
+  // sauvegarde si ça échoue.
+  if (typeof fbRegisterKnownPlayerNames === 'function') {
+    fbRegisterKnownPlayerNames(Object.values(players)).catch(() => {});
   }
   
   fbSaveTournament({
