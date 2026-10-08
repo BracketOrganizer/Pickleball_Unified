@@ -469,7 +469,7 @@ let knownPlayerNames = [];
 function refreshKnownPlayersDatalist() {
   const dl = document.getElementById('knownPlayersDatalist');
   if (!dl) return;
-  dl.innerHTML = knownPlayerNames
+  dl.innerHTML = ((window.PB_LICENSEES && window.PB_LICENSEES.length) ? window.PB_LICENSEES : knownPlayerNames)
     .slice().sort((a, b) => a.localeCompare(b, 'fr'))
     .map(n => `<option value="${n.replace(/"/g, '&quot;')}">`).join('');
 }
@@ -498,6 +498,63 @@ window.fbRegisterKnownPlayerNames = async function (names) {
     console.warn('fbRegisterKnownPlayerNames error:', e);
   }
 };
+
+// ══════════════════════════════════════════════════════════
+// REGISTRE DES LICENCIÉS (ajout)
+// Liste permanente des licenciés, proposée à la saisie des joueurs
+// (autocomplétion + correction d'orthographe, voir le script "licenciés"
+// en bas de page). Un nom saisi hors de cette liste est un "invité" :
+// il sert une seule fois et n'est jamais enregistré (ni ici, ni dans la
+// liste des noms connus). Stockage : tournamentStatus/licensees.
+// Tant que le registre est vide, l'appli se comporte exactement comme avant.
+// ══════════════════════════════════════════════════════════
+window.PB_LICENSEES = [];
+let pbLicUnsub = null, pbLicRetry = 3000;
+function startLicenseesWatch() {
+  if (pbLicUnsub) { try { pbLicUnsub(); } catch (e) {} pbLicUnsub = null; }
+  pbLicUnsub = onSnapshot(doc(db, 'tournamentStatus', 'licensees'), (snap) => {
+    pbLicRetry = 3000;
+    const arr = (snap.exists() && Array.isArray(snap.data().names)) ? snap.data().names : [];
+    window.PB_LICENSEES = arr
+      .filter(n => typeof n === 'string' && n.trim())
+      .slice().sort((a, b) => a.localeCompare(b, 'fr'));
+    refreshKnownPlayersDatalist();
+    window.dispatchEvent(new CustomEvent('pb-licensees'));
+  }, (e) => {
+    console.warn('startLicenseesWatch error:', e);
+    pbLicUnsub = null;
+    setTimeout(startLicenseesWatch, pbLicRetry);
+    pbLicRetry = Math.min(pbLicRetry * 2, 60000);
+  });
+}
+startLicenseesWatch();
+
+window.fbAddLicensees = async function (names) {
+  if (!isScorer()) throw new Error('Réservé aux rôles admin / scorer.');
+  const cleaned = [...new Set((names || []).map(n => (n || '').trim()).filter(Boolean))];
+  if (cleaned.length === 0) return;
+  await setDoc(doc(db, 'tournamentStatus', 'licensees'), { names: arrayUnion(...cleaned) }, { merge: true });
+};
+window.fbSetLicensees = async function (names) {
+  if (!isAdmin()) throw new Error('Réservé au rôle admin.');
+  await setDoc(doc(db, 'tournamentStatus', 'licensees'), { names: names }, { merge: true });
+};
+window.fbRemoveLicensee = async function (name) {
+  if (!isAdmin()) throw new Error('Réservé au rôle admin.');
+  await setDoc(doc(db, 'tournamentStatus', 'licensees'), { names: arrayRemove(name) }, { merge: true });
+};
+
+// Les invités ne vont pas dans la liste des noms connus : quand le registre
+// est utilisé, seuls les licenciés (orthographe exacte du registre) y sont
+// ajoutés par saveData().
+(function () {
+  const orig = window.fbRegisterKnownPlayerNames;
+  window.fbRegisterKnownPlayerNames = function (names) {
+    const reg = window.PB_LICENSEES || [];
+    if (!reg.length || typeof window.pbFindLicensee !== 'function') return orig(names);
+    return orig((names || []).map(n => window.pbFindLicensee(n)).filter(Boolean));
+  };
+})();
 
 // ══════════════════════════════════════════════════════════
 // INSCRIPTIONS (ouverture/fermeture par l'admin, heure limite, quota)
@@ -2254,6 +2311,38 @@ window.adminDeleteUser = async function (uid, name) {
         <table class="user-table">
           <thead><tr><th>#</th><th>Nom</th><th>Téléphone</th><th class="no-print"></th></tr></thead>
           <tbody id="regListBody"><tr><td colspan="4" style="color:#999;font-size:0.8rem;padding:10px">Chargement…</td></tr></tbody>
+        </table>
+      </div>
+    </div>
+
+    <div class="card" id="pbLicCard">
+      <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:6px">
+        <span class="card-title"><i class="fas fa-id-card"></i> Licenciés (<span id="pbLicCount">0</span>)</span>
+        <div class="no-print" style="display:flex;gap:6px">
+          <button class="btn secondary" style="margin:0" onclick="printSection('pbLicCard')"><i class="fas fa-print"></i> Imprimer</button>
+        </div>
+      </div>
+      <p class="no-print" style="font-size:0.78rem;color:#777;margin:6px 0">
+        Ces noms sont proposés automatiquement dans la liste des joueurs, avec l'orthographe et les majuscules exactes.
+        Un nom saisi hors de cette liste est traité comme <strong>invité</strong> : il sert une seule fois et n'est jamais enregistré.
+      </p>
+      <div class="player-row no-print">
+        <input type="text" id="pbLicNew" class="player-input" placeholder="Prénom Nom" autocomplete="off" onkeydown="if(event.key==='Enter'){pbAdminAdd();}">
+        <button class="btn success" style="margin:0;white-space:nowrap" onclick="pbAdminAdd()"><i class="fas fa-plus"></i> Ajouter</button>
+      </div>
+      <details class="no-print" style="margin:8px 0">
+        <summary style="cursor:pointer;font-size:0.85rem;font-weight:600">Ajouter plusieurs licenciés d'un coup</summary>
+        <textarea id="pbLicBulk" class="player-input" style="margin:6px 0;min-height:110px" placeholder="Un nom par ligne (ou séparés par des virgules / points-virgules)"></textarea>
+        <div style="display:flex;gap:6px;flex-wrap:wrap">
+          <button class="btn success" style="margin:0" onclick="pbAdminBulk()"><i class="fas fa-file-import"></i> Importer la liste</button>
+          <button class="btn secondary" style="margin:0" onclick="pbAdminFromRegs()"><i class="fas fa-user-check"></i> Ajouter les inscrits actuels</button>
+        </div>
+      </details>
+      <input type="search" id="pbLicFilter" class="player-input no-print" placeholder="Rechercher un licencié…" oninput="pbRenderAdmin()" style="margin:6px 0">
+      <div class="pb-scroll">
+        <table class="user-table">
+          <thead><tr><th>#</th><th>Nom</th><th class="no-print"></th></tr></thead>
+          <tbody id="pbLicBody"><tr><td colspan="3" style="color:#999;font-size:0.8rem;padding:10px">Chargement…</td></tr></tbody>
         </table>
       </div>
     </div>
@@ -4916,5 +5005,412 @@ document.addEventListener('DOMContentLoaded', function() {
   }
 });
 </script>
+<script>
+// ══════════════════════════════════════════════════════════
+// LICENCIÉS : autocomplétion, correction d'orthographe, doublons, invités
+// (ajout autonome : ne modifie aucune fonction existante ; tant que le
+// registre des licenciés est vide, rien ne change dans l'appli)
+// ══════════════════════════════════════════════════════════
+(function () {
+  'use strict';
+  const DEFAULT_RE = /^Joueur \d+$/;
+
+  const st = document.createElement('style');
+  st.textContent = `
+    .pb-badge{flex:0 0 auto;font-size:0.68rem;font-weight:700;padding:3px 7px;border-radius:10px;white-space:nowrap;line-height:1.2}
+    .pb-tools{display:flex;gap:4px;align-items:center;flex:0 0 auto}
+    .pb-ok{background:#e8f5e9;color:#2e7d32}
+    .pb-guest{background:#fff3e0;color:#e65100}
+    .pb-sugg{background:#fff8e1;color:#b26a00;border:1px dashed #f0a500;cursor:pointer}
+    .pb-dup{background:#ffebee;color:#c62828}
+    .pb-add{background:#e3f2fd;color:#1565c0;cursor:pointer}
+    .pb-scroll{max-height:420px;overflow:auto}
+    .pb-pick-list{max-height:46vh;overflow-y:auto;border:1px solid #ddd;border-radius:8px;margin:8px 0;padding:4px}
+    .pb-pick-item{display:flex;align-items:center;gap:8px;padding:7px 6px;border-radius:6px;font-size:0.9rem;cursor:pointer}
+    .pb-pick-item:hover{background:#f3f6fa}
+    .pb-pick-item input{width:18px;height:18px;flex:0 0 auto}
+    .pb-pick-count{font-weight:800}
+    .pb-pick-count.over{color:#c62828}
+    .pb-guest-chip{display:inline-flex;align-items:center;gap:6px;background:#fff3e0;color:#e65100;border-radius:14px;padding:4px 10px;margin:3px 4px 3px 0;font-size:0.82rem;font-weight:600}
+    .pb-guest-chip button{border:none;background:none;color:#e65100;cursor:pointer;font-size:0.9rem;padding:0}
+  `;
+  document.head.appendChild(st);
+
+  // ── Helpers ──
+  const lic = () => window.PB_LICENSEES || [];
+  const esc = s => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+  const clean = s => String(s == null ? '' : s).replace(/\s+/g, ' ').trim();
+  // Comparaison insensible aux majuscules, accents, tirets et à l'ordre prénom/nom
+  const norm = s => clean(s).normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+  const key = s => norm(s).split(' ').filter(Boolean).sort().join(' ');
+  const notify = m => { if (typeof showNotice === 'function') showNotice(m); };
+  const saveSoon = () => { if (typeof scheduleAutoSave === 'function') scheduleAutoSave(); };
+
+  function find(name) {
+    const k = key(name);
+    if (!k) return null;
+    return lic().find(n => key(n) === k) || null;
+  }
+  window.pbFindLicensee = find;
+
+  function lev(a, b) {
+    if (a === b) return 0;
+    const m = a.length, n = b.length;
+    if (!m) return n;
+    if (!n) return m;
+    let prev = Array.from({ length: n + 1 }, (_, j) => j);
+    for (let i = 1; i <= m; i++) {
+      const cur = [i];
+      for (let j = 1; j <= n; j++) {
+        cur[j] = Math.min(prev[j] + 1, cur[j - 1] + 1, prev[j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1));
+      }
+      prev = cur;
+    }
+    return prev[n];
+  }
+  // Suggestion pour une faute de frappe ou un nom partiel (une seule candidate)
+  function suggest(v) {
+    const k = key(v);
+    if (k.length < 3) return null;
+    const list = lic();
+    let best = null, bd = 99, tie = false;
+    const max = k.length >= 10 ? 3 : 2;
+    list.forEach(n => {
+      const d = lev(k, key(n));
+      if (d < bd) { bd = d; best = n; tie = false; } else if (d === bd) { tie = true; }
+    });
+    if (best && bd <= max && !tie) return best;
+    const toks = norm(v).split(' ').filter(Boolean);
+    const cand = list.filter(n => {
+      const nt = norm(n).split(' ');
+      return toks.every(t => nt.some(x => x.startsWith(t)));
+    });
+    return cand.length === 1 ? cand[0] : null;
+  }
+
+  // ── Ajout de licenciés (admin ou scorer) ──
+  window.pbAddLicensees = async function (names) {
+    if (typeof window.fbAddLicensees !== 'function') { alert('Firebase non initialisé.'); return 0; }
+    const existing = new Set(lic().map(key));
+    const batch = [];
+    let dup = 0;
+    (names || []).map(clean).filter(Boolean).forEach(n => {
+      const k = key(n);
+      if (!k) return;
+      if (existing.has(k)) { dup++; return; }
+      existing.add(k);
+      batch.push(n);
+    });
+    if (batch.length === 0) {
+      notify(dup ? (dup + ' nom(s) déjà dans la liste — rien à ajouter') : 'Aucun nom à ajouter');
+      return 0;
+    }
+    try {
+      await window.fbAddLicensees(batch);
+      notify(batch.length + ' licencié(s) ajouté(s)' + (dup ? ' (' + dup + ' déjà présent(s) ignoré(s))' : ''));
+      return batch.length;
+    } catch (e) {
+      alert('Erreur : ' + (e && e.message ? e.message : e));
+      return 0;
+    }
+  };
+
+  // ── Champs "Joueurs" : badges, correction automatique, doublons ──
+  function playerRows() {
+    const out = [];
+    for (let i = 1; i <= 20; i++) {
+      const el = document.getElementById('player' + i);
+      if (el) out.push({ i, el });
+    }
+    return out;
+  }
+  const isVisible = el => { const r = el.closest('.player-row'); return !r || r.style.display !== 'none'; };
+
+  function resolveField(el) {
+    const v = clean(el.value);
+    if (!v || DEFAULT_RE.test(v) || !lic().length) return;
+    const m = find(v);
+    if (m) {
+      if (m !== el.value) { el.value = m; saveSoon(); }
+    } else if (v !== el.value) {
+      el.value = v;
+      saveSoon();
+    }
+  }
+
+  function bindField(el) {
+    if (el.dataset.pbBound) return;
+    el.dataset.pbBound = '1';
+    el.addEventListener('blur', () => { resolveField(el); setTimeout(syncPlayers, 0); });
+    el.addEventListener('change', () => { resolveField(el); setTimeout(syncPlayers, 0); });
+  }
+
+  function ensurePickerBar() {
+    const pi = document.getElementById('playersInputs');
+    if (!pi || !pi.parentNode) return;
+    if (!document.getElementById('pbPickerBar')) {
+      const bar = document.createElement('div');
+      bar.id = 'pbPickerBar';
+      bar.style.cssText = 'margin:8px 0 4px;display:flex;gap:6px;flex-wrap:wrap;align-items:center';
+      bar.innerHTML = '<button type="button" class="btn secondary" id="pbPickBtn" style="margin:0"><i class="fas fa-users"></i> Choisir parmi les licenciés <span id="pbPickCount"></span></button>';
+      pi.parentNode.insertBefore(bar, pi);
+      document.getElementById('pbPickBtn').addEventListener('click', openPicker);
+    }
+    const c = document.getElementById('pbPickCount');
+    if (c) c.textContent = lic().length ? '(' + lic().length + ')' : '';
+  }
+
+  function syncPlayers() {
+    ensurePickerBar();
+    const registry = lic().length > 0;
+    const rows = playerRows();
+    const counts = {};
+    rows.forEach(({ el }) => {
+      const v = clean(el.value);
+      if (v && !DEFAULT_RE.test(v) && isVisible(el)) { const k = key(v); counts[k] = (counts[k] || 0) + 1; }
+    });
+    rows.forEach(({ i, el }) => {
+      bindField(el);
+      let tools = document.getElementById('pbTools' + i);
+      if (!tools) {
+        tools = document.createElement('span');
+        tools.className = 'pb-tools';
+        tools.id = 'pbTools' + i;
+        el.parentNode.appendChild(tools);
+      }
+      const v = clean(el.value);
+      let html = '';
+      if (registry && v && !DEFAULT_RE.test(v) && isVisible(el)) {
+        const typing = document.activeElement === el;
+        const m = find(v);
+        if (counts[key(v)] > 1) html += '<span class="pb-badge pb-dup" title="Ce nom apparaît plusieurs fois">Doublon</span>';
+        if (m) {
+          html += '<span class="pb-badge pb-ok" title="Licencié">✓</span>';
+        } else if (!typing) {
+          const s = suggest(v);
+          if (s) html += '<span class="pb-badge pb-sugg" data-pbact="accept" data-i="' + i + '" data-val="' + esc(s) + '" title="Cliquer pour corriger">≈ ' + esc(s) + ' ?</span>';
+          html += '<span class="pb-badge pb-guest" title="Nom non enregistré : usage unique">Invité</span>';
+          html += '<span class="pb-badge pb-add" data-pbact="add" data-i="' + i + '" title="Ajouter aux licenciés">+</span>';
+        }
+      }
+      if (tools.dataset.pbHtml !== html) { tools.innerHTML = html; tools.dataset.pbHtml = html; }
+    });
+  }
+
+  document.addEventListener('click', async function (e) {
+    const t = e.target.closest('[data-pbact]');
+    if (!t) return;
+    const i = t.dataset.i;
+    const el = document.getElementById('player' + i);
+    if (!el) return;
+    if (t.dataset.pbact === 'accept') {
+      el.value = t.dataset.val;
+      saveSoon();
+      syncPlayers();
+    } else if (t.dataset.pbact === 'add') {
+      const name = clean(el.value);
+      if (!name) return;
+      if (confirm('Ajouter « ' + name + ' » aux licenciés ?\nIl sera alors proposé automatiquement dans les prochains tournois.')) {
+        await window.pbAddLicensees([name]);
+        syncPlayers();
+      }
+    }
+  });
+
+  // ── Sélecteur "Choisir parmi les licenciés" ──
+  function openPicker() {
+    if (document.getElementById('pbPickModal')) return;
+    const L = lic().slice();
+    const sel = new Set();
+    let guests = [];
+    playerRows().forEach(({ el }) => {
+      if (!isVisible(el)) return;
+      const v = clean(el.value);
+      if (!v || DEFAULT_RE.test(v)) return;
+      const m = find(v);
+      if (m) sel.add(m);
+      else if (!guests.some(g => key(g) === key(v))) guests.push(v);
+    });
+    const opts = (typeof PLAYER_OPTIONS_BY_TERRAIN !== 'undefined' && PLAYER_OPTIONS_BY_TERRAIN[TERRAINS]) || [];
+    const max = opts.length ? opts[opts.length - 1].value : 20;
+
+    const overlay = document.createElement('div');
+    overlay.className = 'modal-overlay';
+    overlay.id = 'pbPickModal';
+    overlay.innerHTML = `
+      <div class="modal-box" style="max-width:460px">
+        <h3><i class="fas fa-users"></i> Choisir les joueurs</h3>
+        <div style="text-align:center;font-size:0.85rem;margin-bottom:6px">
+          <span class="pb-pick-count" id="pbPickTotal">0</span> sélectionné(s) — maximum ${max} pour ${TERRAINS} terrains
+        </div>
+        <input type="search" id="pbPickFilter" class="player-input" placeholder="Rechercher un licencié…" autocomplete="off">
+        <div class="pb-pick-list" id="pbPickList"></div>
+        <div style="font-size:0.8rem;font-weight:600;margin-top:6px">Invités (usage unique, non enregistrés)</div>
+        <div class="player-row">
+          <input type="text" id="pbGuestInput" class="player-input" placeholder="Prénom Nom de l'invité" autocomplete="off">
+          <button type="button" class="btn secondary" id="pbGuestAdd" style="margin:0;white-space:nowrap">Ajouter</button>
+        </div>
+        <div id="pbGuestList"></div>
+        <div style="display:flex;gap:8px;margin-top:12px">
+          <button type="button" class="btn secondary" id="pbPickCancel" style="flex:1;margin:0">Annuler</button>
+          <button type="button" class="btn success" id="pbPickOk" style="flex:1;margin:0">Valider</button>
+        </div>
+      </div>`;
+    document.body.appendChild(overlay);
+    const $ = id => overlay.querySelector('#' + id);
+
+    function updateTotal() {
+      const c = sel.size + guests.length;
+      const el = $('pbPickTotal');
+      el.textContent = c;
+      el.classList.toggle('over', c > max);
+    }
+    function renderList() {
+      const f = norm($('pbPickFilter').value);
+      const html = L.map((n, idx) => ({ n, idx })).filter(x => !f || norm(x.n).includes(f))
+        .map(x => `<label class="pb-pick-item"><input type="checkbox" data-idx="${x.idx}" ${sel.has(x.n) ? 'checked' : ''}> ${esc(x.n)}</label>`).join('');
+      $('pbPickList').innerHTML = html || '<div style="padding:12px;color:#999;font-size:0.85rem">' +
+        (L.length ? 'Aucun résultat.' : 'Aucun licencié enregistré (l\'admin peut les ajouter dans l\'onglet Utilisateurs). Vous pouvez quand même ajouter des invités ci-dessous.') + '</div>';
+    }
+    function renderGuests() {
+      $('pbGuestList').innerHTML = guests.map((g, idx) =>
+        `<span class="pb-guest-chip">${esc(g)} <button type="button" data-g="${idx}" title="Retirer">✕</button></span>`).join('');
+      updateTotal();
+    }
+    function addGuest() {
+      const input = $('pbGuestInput');
+      const name = clean(input.value);
+      if (!name) return;
+      const m = find(name);
+      if (m) {
+        sel.add(m);
+        notify('« ' + m + ' » est licencié : coché dans la liste');
+        renderList();
+      } else if (!guests.some(g => key(g) === key(name))) {
+        guests.push(name);
+      }
+      input.value = '';
+      renderGuests();
+      input.focus();
+    }
+    const close = () => overlay.remove();
+
+    overlay.addEventListener('change', e => {
+      const cb = e.target.closest('input[data-idx]');
+      if (!cb) return;
+      const n = L[+cb.dataset.idx];
+      if (cb.checked) sel.add(n); else sel.delete(n);
+      updateTotal();
+    });
+    overlay.addEventListener('click', e => {
+      const rm = e.target.closest('button[data-g]');
+      if (rm) { guests.splice(+rm.dataset.g, 1); renderGuests(); }
+    });
+    $('pbPickFilter').addEventListener('input', renderList);
+    $('pbGuestAdd').addEventListener('click', addGuest);
+    $('pbGuestInput').addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); addGuest(); } });
+    $('pbPickCancel').addEventListener('click', close);
+    $('pbPickOk').addEventListener('click', () => {
+      const names = L.filter(n => sel.has(n)).concat(guests);
+      const c = names.length;
+      if (c === 0) { alert('Sélectionne au moins un joueur.'); return; }
+      if (c > max) { alert('Maximum ' + max + ' joueurs pour ' + TERRAINS + ' terrains (' + c + ' sélectionnés).'); return; }
+      const target = (opts.find(o => o.value >= c) || { value: c }).value;
+      let msg = 'Remplacer la liste des joueurs par ces ' + c + ' noms ?';
+      if (target > c) msg += '\nLa configuration la plus proche est ' + target + ' joueurs : les ' + (target - c) + ' place(s) restante(s) resteront « Joueur N ».';
+      if (typeof tournamentGenerated !== 'undefined' && tournamentGenerated) msg += '\nAttention : un tournoi est déjà généré.';
+      if (!confirm(msg)) return;
+      const select = document.getElementById('playerCount');
+      if (select) select.value = String(target);
+      if (typeof changePlayerCount === 'function') changePlayerCount();
+      names.forEach((nm, idx) => {
+        const el = document.getElementById('player' + (idx + 1));
+        if (el) el.value = nm;
+      });
+      saveSoon();
+      close();
+      syncPlayers();
+      notify(c + ' joueur(s) renseigné(s)');
+    });
+    renderList();
+    renderGuests();
+  }
+
+  // ── Carte admin : gestion de la liste des licenciés ──
+  function renderAdmin() {
+    const body = document.getElementById('pbLicBody');
+    if (!body) return;
+    const L = lic();
+    const cnt = document.getElementById('pbLicCount');
+    if (cnt) cnt.textContent = L.length;
+    const fEl = document.getElementById('pbLicFilter');
+    const f = norm(fEl ? fEl.value : '');
+    const rows = [];
+    L.forEach((n, idx) => {
+      if (f && !norm(n).includes(f)) return;
+      rows.push('<tr><td>' + (idx + 1) + '</td><td>' + esc(n) + '</td>'
+        + '<td class="no-print" style="white-space:nowrap">'
+        + '<button class="btn" style="padding:4px 8px;margin:0 2px" data-pbadm="edit" data-idx="' + idx + '" title="Corriger le nom"><i class="fas fa-pen"></i></button>'
+        + '<button class="btn" style="padding:4px 8px;margin:0 2px;background:var(--danger)" data-pbadm="del" data-idx="' + idx + '" title="Supprimer"><i class="fas fa-trash"></i></button>'
+        + '</td></tr>');
+    });
+    body.innerHTML = rows.join('') || '<tr><td colspan="3" style="color:#999;font-size:0.8rem;padding:10px">Aucun licencié pour le moment.</td></tr>';
+  }
+  window.pbRenderAdmin = renderAdmin;
+
+  window.pbAdminAdd = async function () {
+    const input = document.getElementById('pbLicNew');
+    if (!input) return;
+    const n = await window.pbAddLicensees([input.value]);
+    if (n) input.value = '';
+    input.focus();
+  };
+  function parseNames(txt) {
+    const sep = /[\r\n]/.test(txt) ? /[\r\n;]+/ : /[;,]+/;
+    return txt.split(sep).map(s => clean(s.replace(/^\s*(?:\d+\s*[.)\-:]|[-•*])\s*/, ''))).filter(Boolean);
+  }
+  window.pbAdminBulk = async function () {
+    const ta = document.getElementById('pbLicBulk');
+    if (!ta) return;
+    const names = parseNames(ta.value);
+    if (names.length === 0) { alert('Colle une liste de noms (un par ligne).'); return; }
+    const n = await window.pbAddLicensees(names);
+    if (n) ta.value = '';
+  };
+  window.pbAdminFromRegs = async function () {
+    const names = (window.REG_LIST || []).map(r => r && r.name).filter(Boolean);
+    if (names.length === 0) { alert('Aucun inscrit pour le moment.'); return; }
+    await window.pbAddLicensees(names);
+  };
+
+  document.addEventListener('click', async function (e) {
+    const b = e.target.closest('[data-pbadm]');
+    if (!b) return;
+    const L = lic();
+    const old = L[+b.dataset.idx];
+    if (!old) return;
+    try {
+      if (b.dataset.pbadm === 'del') {
+        if (!confirm('Supprimer « ' + old + ' » des licenciés ?')) return;
+        await window.fbRemoveLicensee(old);
+        notify('Licencié supprimé');
+      } else {
+        const nv = clean(prompt('Corriger le nom :', old) || '');
+        if (!nv || nv === old) return;
+        if (key(nv) !== key(old) && L.some(n => key(n) === key(nv))) { alert('« ' + nv + ' » existe déjà dans la liste.'); return; }
+        await window.fbSetLicensees(L.map(n => n === old ? nv : n));
+        notify('Nom corrigé (les anciens tournois et le bilan de saison ne sont pas modifiés)');
+      }
+    } catch (err) {
+      alert('Erreur : ' + (err && err.message ? err.message : err));
+    }
+  });
+
+  window.addEventListener('pb-licensees', () => { renderAdmin(); syncPlayers(); });
+  document.addEventListener('DOMContentLoaded', () => { renderAdmin(); syncPlayers(); });
+  setInterval(syncPlayers, 1200);
+})();
+</script>
+
 </body>
 </html>
