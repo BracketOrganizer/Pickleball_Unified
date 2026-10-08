@@ -5128,6 +5128,31 @@ document.addEventListener('DOMContentLoaded', function() {
     if (ddInput === el) hideDd();
     refreshBadges();
   }
+  // Complétion en ligne : en tapant « jea », le champ affiche « Jean Dupont »
+  // avec la fin sélectionnée. Continuer à taper remplace la sélection ;
+  // Suppr/Retour arrière l'efface ; Entrée, Tab ou quitter le champ la valide.
+  const strip = (s) => String(s || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+  function inlineComplete(el, ev) {
+    if (ev && ev.inputType && ev.inputType.indexOf('delete') === 0) return;
+    const typed = el.value;
+    if (!typed || !typed.trim()) return;
+    setTimeout(() => {
+      if (el.value !== typed || document.activeElement !== el) return;
+      if (el.selectionStart !== typed.length || el.selectionEnd !== typed.length) return;
+      const q = strip(typed).replace(/^\s+/, '');
+      if (!q) return;
+      const i = parseInt(el.id.slice(6), 10);
+      const used = usedKeys(i);
+      const idx = ddItems.findIndex(n => !used.has(keyOf(n)) && strip(n).startsWith(q) && n.length > q.length);
+      if (idx < 0) return;
+      const name = ddItems[idx];
+      el.value = name;
+      try { el.setSelectionRange(typed.replace(/^\s+/, '').length + (typed.length - typed.replace(/^\s+/, '').length), name.length); } catch (e) {}
+      ddAct = idx;
+      markAct();
+      refreshBadges();
+    }, 0);
+  }
   const isPlayerField = (t) => t && t.classList && t.classList.contains('player-input') && /^player\d+$/.test(t.id || '');
 
   document.addEventListener('focusin', (ev) => {
@@ -5143,7 +5168,10 @@ document.addEventListener('DOMContentLoaded', function() {
     if (!isPlayerField(el)) return;
     if (silent) return;
     el._licTyped = true;
-    if (roster().length) renderDd(el);
+    if (roster().length) {
+      renderDd(el);
+      inlineComplete(el, ev);
+    }
     refreshBadges();
   });
   document.addEventListener('focusout', (ev) => {
@@ -5158,6 +5186,7 @@ document.addEventListener('DOMContentLoaded', function() {
     if (ev.key === 'ArrowDown' && ddItems.length) { ev.preventDefault(); ddAct = (ddAct + 1) % ddItems.length; markAct(); }
     else if (ev.key === 'ArrowUp' && ddItems.length) { ev.preventDefault(); ddAct = (ddAct - 1 + ddItems.length) % ddItems.length; markAct(); }
     else if (ev.key === 'Enter' && ddAct >= 0 && ddItems[ddAct]) { ev.preventDefault(); pick(ddItems[ddAct]); }
+    else if (ev.key === 'Tab' && el._licTyped && ddAct >= 0 && ddItems[ddAct]) { pick(ddItems[ddAct]); }
     else if (ev.key === 'Escape') { hideDd(); }
   });
   window.addEventListener('scroll', positionDd, true);
