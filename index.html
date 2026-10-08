@@ -385,6 +385,20 @@
     .ecran-clock{font-size:1rem}
     .ecran-score{font-size:1.3rem}
   }
+
+  /* ===== Licenciés : autocomplétion, pastilles, sélection rapide ===== */
+  .lic-badge{font-size:0.65rem;font-weight:700;padding:3px 6px;border-radius:10px;white-space:nowrap;min-width:62px;text-align:center;flex-shrink:0;display:none}
+  .lic-badge.ok{background:#e8f5e9;color:#2e7d32}
+  .lic-badge.guest{background:#fff3e0;color:#e65100}
+  .lic-badge.dup{background:#ffebee;color:#c62828}
+  .lic-dd{position:fixed;z-index:4000;background:#fff;border:2px solid var(--primary);border-radius:8px;box-shadow:0 8px 24px rgba(0,0,0,.25);overflow-y:auto;display:none;-webkit-overflow-scrolling:touch}
+  .lic-dd .it{padding:10px 12px;font-size:.9rem;border-bottom:1px solid #eee;cursor:pointer;color:#333}
+  .lic-dd .it.act,.lic-dd .it:hover{background:#f3e5f5}
+  .lic-dd .none{padding:8px 12px;font-size:.78rem;color:#e65100}
+  .lic-row{display:flex;align-items:center;gap:8px;padding:8px 10px;border-bottom:1px solid #eee;font-size:.9rem;cursor:pointer}
+  .lic-row input{width:18px;height:18px;flex-shrink:0}
+  .lic-row.mg{cursor:default;justify-content:space-between}
+  .lic-list{overflow-y:auto;max-height:40vh;min-height:110px;border:1px solid #ddd;border-radius:8px;margin:8px 0}
 </style>
 <!-- ══════════════════════════════════════════════════════════
      🔥 FIREBASE : AUTHENTIFICATION, RÔLES, SYNCHRONISATION
@@ -469,7 +483,7 @@ let knownPlayerNames = [];
 function refreshKnownPlayersDatalist() {
   const dl = document.getElementById('knownPlayersDatalist');
   if (!dl) return;
-  dl.innerHTML = ((window.PB_LICENSEES && window.PB_LICENSEES.length) ? window.PB_LICENSEES : knownPlayerNames)
+  dl.innerHTML = knownPlayerNames
     .slice().sort((a, b) => a.localeCompare(b, 'fr'))
     .map(n => `<option value="${n.replace(/"/g, '&quot;')}">`).join('');
 }
@@ -489,7 +503,14 @@ window.fbRegisterKnownPlayerNames = async function (names) {
     (names || [])
       .map(n => (n || '').trim())
       .filter(n => n && !/^Joueur \d+$/.test(n))
-  )];
+  )].filter(n => {
+    // Si une liste de licenciés existe, les invités (hors liste) ne sont pas mémorisés.
+    const lic = window.LICENCIES;
+    if (!Array.isArray(lic) || lic.length === 0) return true;
+    const k = s => String(s).normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim().split(' ').sort().join(' ');
+    const set = new Set(lic.map(k));
+    return set.has(k(n));
+  });
   if (cleaned.length === 0) return;
   if (!isScorer()) return;
   try {
@@ -499,62 +520,28 @@ window.fbRegisterKnownPlayerNames = async function (names) {
   }
 };
 
-// ══════════════════════════════════════════════════════════
-// REGISTRE DES LICENCIÉS (ajout)
-// Liste permanente des licenciés, proposée à la saisie des joueurs
-// (autocomplétion + correction d'orthographe, voir le script "licenciés"
-// en bas de page). Un nom saisi hors de cette liste est un "invité" :
-// il sert une seule fois et n'est jamais enregistré (ni ici, ni dans la
-// liste des noms connus). Stockage : tournamentStatus/licensees.
-// Tant que le registre est vide, l'appli se comporte exactement comme avant.
-// ══════════════════════════════════════════════════════════
-window.PB_LICENSEES = [];
-let pbLicUnsub = null, pbLicRetry = 3000;
-function startLicenseesWatch() {
-  if (pbLicUnsub) { try { pbLicUnsub(); } catch (e) {} pbLicUnsub = null; }
-  pbLicUnsub = onSnapshot(doc(db, 'tournamentStatus', 'licensees'), (snap) => {
-    pbLicRetry = 3000;
-    const arr = (snap.exists() && Array.isArray(snap.data().names)) ? snap.data().names : [];
-    window.PB_LICENSEES = arr
-      .filter(n => typeof n === 'string' && n.trim())
-      .slice().sort((a, b) => a.localeCompare(b, 'fr'));
-    refreshKnownPlayersDatalist();
-    window.dispatchEvent(new CustomEvent('pb-licensees'));
-  }, (e) => {
-    console.warn('startLicenseesWatch error:', e);
-    pbLicUnsub = null;
-    setTimeout(startLicenseesWatch, pbLicRetry);
-    pbLicRetry = Math.min(pbLicRetry * 2, 60000);
+// ── Liste des licenciés de la saison (gérée par l'admin) ──
+//    Sert à l'autocomplétion des noms dans l'onglet Joueurs. Un nom saisi
+//    qui n'est pas dans cette liste est un "invité" : il sert pour le tournoi
+//    en cours mais n'est pas mémorisé dans la liste des noms connus.
+window.LICENCIES = [];
+onSnapshot(doc(db, 'tournamentStatus', 'licencies'), (snap) => {
+  window.LICENCIES = (snap.exists() && Array.isArray(snap.data().names)) ? snap.data().names : [];
+  window.dispatchEvent(new Event('licencies-changed'));
+}, (e) => console.warn('licencies watch error:', e));
+
+window.fbSaveLicencies = async function (names) {
+  if (!isAdmin()) throw new Error('Réservé au rôle admin.');
+  const seen = new Set();
+  const clean = [];
+  (names || []).forEach(n => {
+    const t = (n || '').trim().replace(/\s+/g, ' ');
+    const k = t.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim().split(' ').sort().join(' ');
+    if (t && k && !seen.has(k)) { seen.add(k); clean.push(t); }
   });
-}
-startLicenseesWatch();
-
-window.fbAddLicensees = async function (names) {
-  if (!isScorer()) throw new Error('Réservé aux rôles admin / scorer.');
-  const cleaned = [...new Set((names || []).map(n => (n || '').trim()).filter(Boolean))];
-  if (cleaned.length === 0) return;
-  await setDoc(doc(db, 'tournamentStatus', 'licensees'), { names: arrayUnion(...cleaned) }, { merge: true });
+  clean.sort((a, b) => a.localeCompare(b, 'fr'));
+  await setDoc(doc(db, 'tournamentStatus', 'licencies'), { names: clean, updatedAt: serverTimestamp() });
 };
-window.fbSetLicensees = async function (names) {
-  if (!isAdmin()) throw new Error('Réservé au rôle admin.');
-  await setDoc(doc(db, 'tournamentStatus', 'licensees'), { names: names }, { merge: true });
-};
-window.fbRemoveLicensee = async function (name) {
-  if (!isAdmin()) throw new Error('Réservé au rôle admin.');
-  await setDoc(doc(db, 'tournamentStatus', 'licensees'), { names: arrayRemove(name) }, { merge: true });
-};
-
-// Les invités ne vont pas dans la liste des noms connus : quand le registre
-// est utilisé, seuls les licenciés (orthographe exacte du registre) y sont
-// ajoutés par saveData().
-(function () {
-  const orig = window.fbRegisterKnownPlayerNames;
-  window.fbRegisterKnownPlayerNames = function (names) {
-    const reg = window.PB_LICENSEES || [];
-    if (!reg.length || typeof window.pbFindLicensee !== 'function') return orig(names);
-    return orig((names || []).map(n => window.pbFindLicensee(n)).filter(Boolean));
-  };
-})();
 
 // ══════════════════════════════════════════════════════════
 // INSCRIPTIONS (ouverture/fermeture par l'admin, heure limite, quota)
@@ -2123,6 +2110,10 @@ window.adminDeleteUser = async function (uid, name) {
 
     <div class="card" data-role="scorer">
       <span class="card-title"><i class="fas fa-user-friends"></i> Joueurs (1-20)</span>
+      <div class="no-print" style="display:flex;gap:6px;flex-wrap:wrap;margin:8px 0">
+        <button class="btn success" style="margin:0" onclick="openLicPicker()"><i class="fas fa-list-check"></i> Sélection rapide</button>
+        <button class="btn secondary" id="licManageBtn" data-role="admin" style="margin:0;display:none" onclick="openLicManager()"><i class="fas fa-id-card"></i> Licenciés (<span id="licCount">0</span>)</button>
+      </div>
       <div id="playersInputs"></div>
       <datalist id="knownPlayersDatalist"></datalist>
     </div>
@@ -2311,38 +2302,6 @@ window.adminDeleteUser = async function (uid, name) {
         <table class="user-table">
           <thead><tr><th>#</th><th>Nom</th><th>Téléphone</th><th class="no-print"></th></tr></thead>
           <tbody id="regListBody"><tr><td colspan="4" style="color:#999;font-size:0.8rem;padding:10px">Chargement…</td></tr></tbody>
-        </table>
-      </div>
-    </div>
-
-    <div class="card" id="pbLicCard">
-      <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:6px">
-        <span class="card-title"><i class="fas fa-id-card"></i> Licenciés (<span id="pbLicCount">0</span>)</span>
-        <div class="no-print" style="display:flex;gap:6px">
-          <button class="btn secondary" style="margin:0" onclick="printSection('pbLicCard')"><i class="fas fa-print"></i> Imprimer</button>
-        </div>
-      </div>
-      <p class="no-print" style="font-size:0.78rem;color:#777;margin:6px 0">
-        Ces noms sont proposés automatiquement dans la liste des joueurs, avec l'orthographe et les majuscules exactes.
-        Un nom saisi hors de cette liste est traité comme <strong>invité</strong> : il sert une seule fois et n'est jamais enregistré.
-      </p>
-      <div class="player-row no-print">
-        <input type="text" id="pbLicNew" class="player-input" placeholder="Prénom Nom" autocomplete="off" onkeydown="if(event.key==='Enter'){pbAdminAdd();}">
-        <button class="btn success" style="margin:0;white-space:nowrap" onclick="pbAdminAdd()"><i class="fas fa-plus"></i> Ajouter</button>
-      </div>
-      <details class="no-print" style="margin:8px 0">
-        <summary style="cursor:pointer;font-size:0.85rem;font-weight:600">Ajouter plusieurs licenciés d'un coup</summary>
-        <textarea id="pbLicBulk" class="player-input" style="margin:6px 0;min-height:110px" placeholder="Un nom par ligne (ou séparés par des virgules / points-virgules)"></textarea>
-        <div style="display:flex;gap:6px;flex-wrap:wrap">
-          <button class="btn success" style="margin:0" onclick="pbAdminBulk()"><i class="fas fa-file-import"></i> Importer la liste</button>
-          <button class="btn secondary" style="margin:0" onclick="pbAdminFromRegs()"><i class="fas fa-user-check"></i> Ajouter les inscrits actuels</button>
-        </div>
-      </details>
-      <input type="search" id="pbLicFilter" class="player-input no-print" placeholder="Rechercher un licencié…" oninput="pbRenderAdmin()" style="margin:6px 0">
-      <div class="pb-scroll">
-        <table class="user-table">
-          <thead><tr><th>#</th><th>Nom</th><th class="no-print"></th></tr></thead>
-          <tbody id="pbLicBody"><tr><td colspan="3" style="color:#999;font-size:0.8rem;padding:10px">Chargement…</td></tr></tbody>
         </table>
       </div>
     </div>
@@ -5004,413 +4963,421 @@ document.addEventListener('DOMContentLoaded', function() {
     showNotice('Erreur d\'initialisation');
   }
 });
-</script>
-<script>
+
 // ══════════════════════════════════════════════════════════
-// LICENCIÉS : autocomplétion, correction d'orthographe, doublons, invités
-// (ajout autonome : ne modifie aucune fonction existante ; tant que le
-// registre des licenciés est vide, rien ne change dans l'appli)
+// LICENCIÉS : autocomplétion des noms, détection d'invités/doublons,
+// sélection rapide et gestion de la liste. Sans effet tant que la liste
+// des licenciés est vide (l'appli se comporte alors comme avant).
 // ══════════════════════════════════════════════════════════
 (function () {
   'use strict';
-  const DEFAULT_RE = /^Joueur \d+$/;
+  const $ = (id) => document.getElementById(id);
+  const esc = (s) => String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+  const norm = (s) => String(s || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
+  const keyOf = (s) => norm(s).split(' ').filter(Boolean).sort().join(' ');
+  const titleCase = (s) => String(s || '').trim().replace(/\s+/g, ' ').toLowerCase()
+    .replace(/(^|[\s\-'’])([a-zà-ÿ])/g, (m, a, b) => a + b.toUpperCase());
+  const roster = () => Array.isArray(window.LICENCIES) ? window.LICENCIES : [];
+  const isDefault = (v, i) => { v = (v || '').trim(); return v === '' || v === 'Joueur ' + i; };
+  const isAdminUI = () => { const b = $('licManageBtn'); return !!b && b.style.display !== 'none'; };
+  let rosterByKey = new Map();
+  let silent = false;
 
-  const st = document.createElement('style');
-  st.textContent = `
-    .pb-badge{flex:0 0 auto;font-size:0.68rem;font-weight:700;padding:3px 7px;border-radius:10px;white-space:nowrap;line-height:1.2}
-    .pb-tools{display:flex;gap:4px;align-items:center;flex:0 0 auto}
-    .pb-ok{background:#e8f5e9;color:#2e7d32}
-    .pb-guest{background:#fff3e0;color:#e65100}
-    .pb-sugg{background:#fff8e1;color:#b26a00;border:1px dashed #f0a500;cursor:pointer}
-    .pb-dup{background:#ffebee;color:#c62828}
-    .pb-add{background:#e3f2fd;color:#1565c0;cursor:pointer}
-    .pb-scroll{max-height:420px;overflow:auto}
-    .pb-pick-list{max-height:46vh;overflow-y:auto;border:1px solid #ddd;border-radius:8px;margin:8px 0;padding:4px}
-    .pb-pick-item{display:flex;align-items:center;gap:8px;padding:7px 6px;border-radius:6px;font-size:0.9rem;cursor:pointer}
-    .pb-pick-item:hover{background:#f3f6fa}
-    .pb-pick-item input{width:18px;height:18px;flex:0 0 auto}
-    .pb-pick-count{font-weight:800}
-    .pb-pick-count.over{color:#c62828}
-    .pb-guest-chip{display:inline-flex;align-items:center;gap:6px;background:#fff3e0;color:#e65100;border-radius:14px;padding:4px 10px;margin:3px 4px 3px 0;font-size:0.82rem;font-weight:600}
-    .pb-guest-chip button{border:none;background:none;color:#e65100;cursor:pointer;font-size:0.9rem;padding:0}
-  `;
-  document.head.appendChild(st);
-
-  // ── Helpers ──
-  const lic = () => window.PB_LICENSEES || [];
-  const esc = s => String(s).replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
-  const clean = s => String(s == null ? '' : s).replace(/\s+/g, ' ').trim();
-  // Comparaison insensible aux majuscules, accents, tirets et à l'ordre prénom/nom
-  const norm = s => clean(s).normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase().replace(/[^a-z0-9]+/g, ' ').trim();
-  const key = s => norm(s).split(' ').filter(Boolean).sort().join(' ');
-  const notify = m => { if (typeof showNotice === 'function') showNotice(m); };
-  const saveSoon = () => { if (typeof scheduleAutoSave === 'function') scheduleAutoSave(); };
-
-  function find(name) {
-    const k = key(name);
-    if (!k) return null;
-    return lic().find(n => key(n) === k) || null;
+  function rebuildMap() {
+    rosterByKey = new Map();
+    roster().forEach(n => rosterByKey.set(keyOf(n), n));
   }
-  window.pbFindLicensee = find;
+  function playerInputs() {
+    const a = [];
+    for (let i = 1; i <= 20; i++) { const el = $('player' + i); if (el) a.push({ i, el }); }
+    return a;
+  }
+  function fire(el) {
+    silent = true;
+    try { el.dispatchEvent(new Event('input', { bubbles: true })); } finally { silent = false; }
+  }
+  function usedKeys(exceptI) {
+    const s = new Set();
+    playerInputs().forEach(({ i, el }) => {
+      if (i <= N && i !== exceptI && !isDefault(el.value, i)) s.add(keyOf(el.value));
+    });
+    return s;
+  }
 
-  function lev(a, b) {
-    if (a === b) return 0;
-    const m = a.length, n = b.length;
-    if (!m) return n;
-    if (!n) return m;
-    let prev = Array.from({ length: n + 1 }, (_, j) => j);
-    for (let i = 1; i <= m; i++) {
-      const cur = [i];
-      for (let j = 1; j <= n; j++) {
-        cur[j] = Math.min(prev[j] + 1, cur[j - 1] + 1, prev[j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1));
+  // ── Pastilles (Licencié / Invité / Doublon) + désactivation du datalist natif ──
+  function decorate() {
+    const has = roster().length > 0;
+    playerInputs().forEach(({ el }) => {
+      const row = el.parentElement;
+      if (row && !row.querySelector('.lic-badge')) {
+        const b = document.createElement('span');
+        b.className = 'lic-badge';
+        row.appendChild(b);
       }
-      prev = cur;
-    }
-    return prev[n];
-  }
-  // Suggestion pour une faute de frappe ou un nom partiel (une seule candidate)
-  function suggest(v) {
-    const k = key(v);
-    if (k.length < 3) return null;
-    const list = lic();
-    let best = null, bd = 99, tie = false;
-    const max = k.length >= 10 ? 3 : 2;
-    list.forEach(n => {
-      const d = lev(k, key(n));
-      if (d < bd) { bd = d; best = n; tie = false; } else if (d === bd) { tie = true; }
+      if (has) el.removeAttribute('list');
+      else if (!el.getAttribute('list')) el.setAttribute('list', 'knownPlayersDatalist');
     });
-    if (best && bd <= max && !tie) return best;
-    const toks = norm(v).split(' ').filter(Boolean);
-    const cand = list.filter(n => {
-      const nt = norm(n).split(' ');
-      return toks.every(t => nt.some(x => x.startsWith(t)));
+    refreshBadges();
+  }
+  function refreshBadges() {
+    const has = roster().length > 0;
+    const counts = new Map();
+    playerInputs().forEach(({ i, el }) => {
+      if (i <= N && !isDefault(el.value, i)) { const k = keyOf(el.value); counts.set(k, (counts.get(k) || 0) + 1); }
     });
-    return cand.length === 1 ? cand[0] : null;
-  }
-
-  // ── Ajout de licenciés (admin ou scorer) ──
-  window.pbAddLicensees = async function (names) {
-    if (typeof window.fbAddLicensees !== 'function') { alert('Firebase non initialisé.'); return 0; }
-    const existing = new Set(lic().map(key));
-    const batch = [];
-    let dup = 0;
-    (names || []).map(clean).filter(Boolean).forEach(n => {
-      const k = key(n);
-      if (!k) return;
-      if (existing.has(k)) { dup++; return; }
-      existing.add(k);
-      batch.push(n);
-    });
-    if (batch.length === 0) {
-      notify(dup ? (dup + ' nom(s) déjà dans la liste — rien à ajouter') : 'Aucun nom à ajouter');
-      return 0;
-    }
-    try {
-      await window.fbAddLicensees(batch);
-      notify(batch.length + ' licencié(s) ajouté(s)' + (dup ? ' (' + dup + ' déjà présent(s) ignoré(s))' : ''));
-      return batch.length;
-    } catch (e) {
-      alert('Erreur : ' + (e && e.message ? e.message : e));
-      return 0;
-    }
-  };
-
-  // ── Champs "Joueurs" : badges, correction automatique, doublons ──
-  function playerRows() {
-    const out = [];
-    for (let i = 1; i <= 20; i++) {
-      const el = document.getElementById('player' + i);
-      if (el) out.push({ i, el });
-    }
-    return out;
-  }
-  const isVisible = el => { const r = el.closest('.player-row'); return !r || r.style.display !== 'none'; };
-
-  function resolveField(el) {
-    const v = clean(el.value);
-    if (!v || DEFAULT_RE.test(v) || !lic().length) return;
-    const m = find(v);
-    if (m) {
-      if (m !== el.value) { el.value = m; saveSoon(); }
-    } else if (v !== el.value) {
-      el.value = v;
-      saveSoon();
-    }
-  }
-
-  function bindField(el) {
-    if (el.dataset.pbBound) return;
-    el.dataset.pbBound = '1';
-    el.addEventListener('blur', () => { resolveField(el); setTimeout(syncPlayers, 0); });
-    el.addEventListener('change', () => { resolveField(el); setTimeout(syncPlayers, 0); });
-  }
-
-  function ensurePickerBar() {
-    const pi = document.getElementById('playersInputs');
-    if (!pi || !pi.parentNode) return;
-    if (!document.getElementById('pbPickerBar')) {
-      const bar = document.createElement('div');
-      bar.id = 'pbPickerBar';
-      bar.style.cssText = 'margin:8px 0 4px;display:flex;gap:6px;flex-wrap:wrap;align-items:center';
-      bar.innerHTML = '<button type="button" class="btn secondary" id="pbPickBtn" style="margin:0"><i class="fas fa-users"></i> Choisir parmi les licenciés <span id="pbPickCount"></span></button>';
-      pi.parentNode.insertBefore(bar, pi);
-      document.getElementById('pbPickBtn').addEventListener('click', openPicker);
-    }
-    const c = document.getElementById('pbPickCount');
-    if (c) c.textContent = lic().length ? '(' + lic().length + ')' : '';
-  }
-
-  function syncPlayers() {
-    ensurePickerBar();
-    const registry = lic().length > 0;
-    const rows = playerRows();
-    const counts = {};
-    rows.forEach(({ el }) => {
-      const v = clean(el.value);
-      if (v && !DEFAULT_RE.test(v) && isVisible(el)) { const k = key(v); counts[k] = (counts[k] || 0) + 1; }
-    });
-    rows.forEach(({ i, el }) => {
-      bindField(el);
-      let tools = document.getElementById('pbTools' + i);
-      if (!tools) {
-        tools = document.createElement('span');
-        tools.className = 'pb-tools';
-        tools.id = 'pbTools' + i;
-        el.parentNode.appendChild(tools);
-      }
-      const v = clean(el.value);
-      let html = '';
-      if (registry && v && !DEFAULT_RE.test(v) && isVisible(el)) {
-        const typing = document.activeElement === el;
-        const m = find(v);
-        if (counts[key(v)] > 1) html += '<span class="pb-badge pb-dup" title="Ce nom apparaît plusieurs fois">Doublon</span>';
-        if (m) {
-          html += '<span class="pb-badge pb-ok" title="Licencié">✓</span>';
-        } else if (!typing) {
-          const s = suggest(v);
-          if (s) html += '<span class="pb-badge pb-sugg" data-pbact="accept" data-i="' + i + '" data-val="' + esc(s) + '" title="Cliquer pour corriger">≈ ' + esc(s) + ' ?</span>';
-          html += '<span class="pb-badge pb-guest" title="Nom non enregistré : usage unique">Invité</span>';
-          html += '<span class="pb-badge pb-add" data-pbact="add" data-i="' + i + '" title="Ajouter aux licenciés">+</span>';
-        }
-      }
-      if (tools.dataset.pbHtml !== html) { tools.innerHTML = html; tools.dataset.pbHtml = html; }
+    playerInputs().forEach(({ i, el }) => {
+      const b = el.parentElement && el.parentElement.querySelector('.lic-badge');
+      if (!b) return;
+      if (!has || isDefault(el.value, i)) { b.style.display = 'none'; b.className = 'lic-badge'; return; }
+      const k = keyOf(el.value);
+      b.style.display = '';
+      if (counts.get(k) > 1) { b.className = 'lic-badge dup'; b.textContent = '⚠ Doublon'; b.title = 'Ce nom est déjà utilisé dans la liste'; }
+      else if (rosterByKey.has(k)) { b.className = 'lic-badge ok'; b.textContent = '✓ Licencié'; b.title = ''; }
+      else { b.className = 'lic-badge guest'; b.textContent = 'Invité'; b.title = isAdminUI() ? 'Invité (non enregistré). Cliquer pour l\'ajouter aux licenciés.' : 'Invité (non enregistré)'; }
     });
   }
 
-  document.addEventListener('click', async function (e) {
-    const t = e.target.closest('[data-pbact]');
-    if (!t) return;
-    const i = t.dataset.i;
-    const el = document.getElementById('player' + i);
+  // ── Menu de suggestions ──
+  let dd = null, ddInput = null, ddItems = [], ddAct = -1, blurTimer = null;
+  function ensureDd() {
+    if (dd) return dd;
+    dd = document.createElement('div');
+    dd.className = 'lic-dd';
+    dd.id = 'licDropdown';
+    dd.addEventListener('mousedown', ev => ev.preventDefault());
+    dd.addEventListener('click', ev => {
+      const it = ev.target.closest('.it');
+      if (it) pick(ddItems[parseInt(it.dataset.k, 10)]);
+    });
+    document.body.appendChild(dd);
+    return dd;
+  }
+  function hideDd() { if (dd) dd.style.display = 'none'; ddInput = null; ddItems = []; ddAct = -1; }
+  function positionDd() {
+    if (!dd || !ddInput || dd.style.display === 'none') return;
+    const r = ddInput.getBoundingClientRect();
+    const vh = (window.visualViewport ? window.visualViewport.height : window.innerHeight);
+    const below = vh - r.bottom - 8;
+    const w = Math.max(r.width, 230);
+    dd.style.width = w + 'px';
+    dd.style.left = Math.max(4, Math.min(r.left, window.innerWidth - w - 4)) + 'px';
+    if (below < 170 && r.top > below) {
+      dd.style.maxHeight = Math.min(240, r.top - 12) + 'px';
+      dd.style.top = 'auto';
+      dd.style.bottom = (window.innerHeight - r.top + 2) + 'px';
+    } else {
+      dd.style.maxHeight = Math.min(240, Math.max(110, below)) + 'px';
+      dd.style.bottom = 'auto';
+      dd.style.top = (r.bottom + 2) + 'px';
+    }
+  }
+  function renderDd(el) {
+    const r = roster();
+    if (!r.length) { hideDd(); return; }
+    const i = parseInt(el.id.slice(6), 10);
+    const raw = (el._licTyped && !isDefault(el.value, i)) ? el.value : '';
+    const qt = norm(raw).split(' ').filter(Boolean);
+    const used = usedKeys(i);
+    ddItems = r.filter(n => {
+      if (used.has(keyOf(n))) return false;
+      const words = norm(n).split(' ');
+      return qt.every(t => words.some(w => w.startsWith(t)));
+    }).slice(0, 80);
+    const box = ensureDd();
+    ddInput = el;
+    if (ddItems.length) {
+      box.innerHTML = ddItems.map((n, k) => `<div class="it" data-k="${k}">${esc(n)}</div>`).join('');
+      ddAct = (qt.length ? 0 : -1);
+    } else {
+      ddAct = -1;
+      box.innerHTML = qt.length
+        ? `<div class="none">Aucun licencié ne correspond. « ${esc(raw.trim())} » sera un <b>invité</b> (non enregistré).</div>`
+        : `<div class="none">Tous les licenciés sont déjà placés.</div>`;
+    }
+    box.style.display = 'block';
+    markAct();
+    positionDd();
+  }
+  function markAct() {
+    if (!dd) return;
+    dd.querySelectorAll('.it').forEach((n, k) => {
+      n.classList.toggle('act', k === ddAct);
+      if (k === ddAct && n.scrollIntoView) n.scrollIntoView({ block: 'nearest' });
+    });
+  }
+  function pick(name) {
+    const el = ddInput;
+    if (!el || !name) return;
+    clearTimeout(blurTimer);
+    el.value = name;
+    fire(el);
+    hideDd();
+    refreshBadges();
+    el.blur();
+  }
+  // Normalisation à la sortie du champ : un nom reconnu reprend l'écriture
+  // exacte de la liste ; un invité est simplement mis en majuscules propres.
+  function finalize(el) {
+    if (!roster().length) return;
+    const i = parseInt(el.id.slice(6), 10);
+    if (!isDefault(el.value, i)) {
+      const v = el.value;
+      const nv = rosterByKey.get(keyOf(v)) || titleCase(v);
+      if (nv && nv !== v) { el.value = nv; fire(el); }
+    }
+    if (ddInput === el) hideDd();
+    refreshBadges();
+  }
+  const isPlayerField = (t) => t && t.classList && t.classList.contains('player-input') && /^player\d+$/.test(t.id || '');
+
+  document.addEventListener('focusin', (ev) => {
+    const el = ev.target;
+    if (!isPlayerField(el) || !roster().length) return;
+    clearTimeout(blurTimer);
+    el._licTyped = false;
+    renderDd(el);
+    if (!isDefault(el.value, parseInt(el.id.slice(6), 10)) && el.select) { try { el.select(); } catch (e) {} }
+  });
+  document.addEventListener('input', (ev) => {
+    const el = ev.target;
+    if (!isPlayerField(el)) return;
+    if (silent) return;
+    el._licTyped = true;
+    if (roster().length) renderDd(el);
+    refreshBadges();
+  });
+  document.addEventListener('focusout', (ev) => {
+    const el = ev.target;
+    if (!isPlayerField(el)) return;
+    clearTimeout(blurTimer);
+    blurTimer = setTimeout(() => finalize(el), 200);
+  });
+  document.addEventListener('keydown', (ev) => {
+    const el = ev.target;
+    if (!isPlayerField(el) || !dd || dd.style.display === 'none' || ddInput !== el) return;
+    if (ev.key === 'ArrowDown' && ddItems.length) { ev.preventDefault(); ddAct = (ddAct + 1) % ddItems.length; markAct(); }
+    else if (ev.key === 'ArrowUp' && ddItems.length) { ev.preventDefault(); ddAct = (ddAct - 1 + ddItems.length) % ddItems.length; markAct(); }
+    else if (ev.key === 'Enter' && ddAct >= 0 && ddItems[ddAct]) { ev.preventDefault(); pick(ddItems[ddAct]); }
+    else if (ev.key === 'Escape') { hideDd(); }
+  });
+  window.addEventListener('scroll', positionDd, true);
+  window.addEventListener('resize', positionDd);
+  if (window.visualViewport) window.visualViewport.addEventListener('resize', positionDd);
+
+  // Clic sur une pastille "Invité" (admin) : ajouter la personne aux licenciés
+  document.addEventListener('click', async (ev) => {
+    const b = ev.target.closest && ev.target.closest('.lic-badge.guest');
+    if (!b || !isAdminUI()) return;
+    const el = b.parentElement.querySelector('input.player-input');
     if (!el) return;
-    if (t.dataset.pbact === 'accept') {
-      el.value = t.dataset.val;
-      saveSoon();
-      syncPlayers();
-    } else if (t.dataset.pbact === 'add') {
-      const name = clean(el.value);
-      if (!name) return;
-      if (confirm('Ajouter « ' + name + ' » aux licenciés ?\nIl sera alors proposé automatiquement dans les prochains tournois.')) {
-        await window.pbAddLicensees([name]);
-        syncPlayers();
-      }
-    }
+    const name = titleCase(el.value);
+    if (!name) return;
+    if (!confirm('Ajouter « ' + name + ' » à la liste des licenciés de la saison ?')) return;
+    try {
+      await window.fbSaveLicencies(roster().concat([name]));
+      el.value = name; fire(el);
+      showNotice('« ' + name + ' » ajouté aux licenciés');
+    } catch (e) { alert('Impossible d\'enregistrer : ' + e.message); }
   });
 
-  // ── Sélecteur "Choisir parmi les licenciés" ──
-  function openPicker() {
-    if (document.getElementById('pbPickModal')) return;
-    const L = lic().slice();
-    const sel = new Set();
-    let guests = [];
-    playerRows().forEach(({ el }) => {
-      if (!isVisible(el)) return;
-      const v = clean(el.value);
-      if (!v || DEFAULT_RE.test(v)) return;
-      const m = find(v);
-      if (m) sel.add(m);
-      else if (!guests.some(g => key(g) === key(v))) guests.push(v);
-    });
-    const opts = (typeof PLAYER_OPTIONS_BY_TERRAIN !== 'undefined' && PLAYER_OPTIONS_BY_TERRAIN[TERRAINS]) || [];
-    const max = opts.length ? opts[opts.length - 1].value : 20;
+  // Reconstruction des champs (changement de nombre de joueurs, import, synchro…)
+  const container = $('playersInputs');
+  if (container) new MutationObserver(decorate).observe(container, { childList: true });
 
-    const overlay = document.createElement('div');
-    overlay.className = 'modal-overlay';
-    overlay.id = 'pbPickModal';
-    overlay.innerHTML = `
-      <div class="modal-box" style="max-width:460px">
-        <h3><i class="fas fa-users"></i> Choisir les joueurs</h3>
-        <div style="text-align:center;font-size:0.85rem;margin-bottom:6px">
-          <span class="pb-pick-count" id="pbPickTotal">0</span> sélectionné(s) — maximum ${max} pour ${TERRAINS} terrains
+  window.addEventListener('licencies-changed', () => {
+    rebuildMap();
+    const c = $('licCount'); if (c) c.textContent = roster().length;
+    decorate();
+    if (ddInput) renderDd(ddInput);
+    if ($('licManagerModal')) renderManagerList();
+    if ($('licPickerModal')) { /* la sélection en cours n'est pas perturbée */ }
+  });
+
+  // ── Sélection rapide ──
+  window.closeLicPicker = function () { const m = $('licPickerModal'); if (m) m.remove(); };
+  window.openLicPicker = function () {
+    const r = roster();
+    if (!r.length) {
+      if (isAdminUI()) { if (confirm('La liste des licenciés est vide. La remplir maintenant ?')) openLicManager(); }
+      else alert('La liste des licenciés est vide. Demandez à l\'administrateur de la renseigner.');
+      return;
+    }
+    closeLicPicker();
+    const cur = playerInputs().filter(x => x.i <= N && !isDefault(x.el.value, x.i)).map(x => x.el.value.trim());
+    const curKeys = new Set(cur.map(keyOf));
+    const guests = cur.filter(n => !rosterByKey.has(keyOf(n)));
+    const ov = document.createElement('div');
+    ov.className = 'modal-overlay';
+    ov.id = 'licPickerModal';
+    ov.innerHTML = `
+      <div class="modal-box" style="max-width:460px;max-height:94vh;display:flex;flex-direction:column">
+        <h3><i class="fas fa-list-check"></i> Qui joue aujourd'hui ?</h3>
+        <input type="text" id="licPickSearch" class="player-input" placeholder="Rechercher un licencié…" autocomplete="off">
+        <div class="lic-list" id="licPickList">
+          ${r.map((n, k) => `<label class="lic-row" data-n="${esc(norm(n))}"><input type="checkbox" data-k="${k}" ${curKeys.has(keyOf(n)) ? 'checked' : ''}><span>${esc(n)}</span></label>`).join('')}
         </div>
-        <input type="search" id="pbPickFilter" class="player-input" placeholder="Rechercher un licencié…" autocomplete="off">
-        <div class="pb-pick-list" id="pbPickList"></div>
-        <div style="font-size:0.8rem;font-weight:600;margin-top:6px">Invités (usage unique, non enregistrés)</div>
-        <div class="player-row">
-          <input type="text" id="pbGuestInput" class="player-input" placeholder="Prénom Nom de l'invité" autocomplete="off">
-          <button type="button" class="btn secondary" id="pbGuestAdd" style="margin:0;white-space:nowrap">Ajouter</button>
-        </div>
-        <div id="pbGuestList"></div>
-        <div style="display:flex;gap:8px;margin-top:12px">
-          <button type="button" class="btn secondary" id="pbPickCancel" style="flex:1;margin:0">Annuler</button>
-          <button type="button" class="btn success" id="pbPickOk" style="flex:1;margin:0">Valider</button>
+        <label style="font-size:.8rem;font-weight:600">Invités (un nom par ligne — non enregistrés)</label>
+        <textarea id="licPickGuests" class="player-input" rows="3" style="margin-top:4px" placeholder="Ex. : Marie Durand">${esc(guests.join('\n'))}</textarea>
+        <div id="licPickInfo" style="font-size:.82rem;font-weight:600;margin:8px 0;color:var(--primary)"></div>
+        <div style="display:flex;gap:8px">
+          <button class="btn secondary" style="flex:1;margin:0" onclick="closeLicPicker()">Annuler</button>
+          <button class="btn" style="flex:0 0 auto;margin:0;background:#999" id="licPickClear">Tout décocher</button>
+          <button class="btn success" style="flex:1;margin:0" onclick="applyLicPicker()">Remplir la liste</button>
         </div>
       </div>`;
-    document.body.appendChild(overlay);
-    const $ = id => overlay.querySelector('#' + id);
-
-    function updateTotal() {
-      const c = sel.size + guests.length;
-      const el = $('pbPickTotal');
-      el.textContent = c;
-      el.classList.toggle('over', c > max);
-    }
-    function renderList() {
-      const f = norm($('pbPickFilter').value);
-      const html = L.map((n, idx) => ({ n, idx })).filter(x => !f || norm(x.n).includes(f))
-        .map(x => `<label class="pb-pick-item"><input type="checkbox" data-idx="${x.idx}" ${sel.has(x.n) ? 'checked' : ''}> ${esc(x.n)}</label>`).join('');
-      $('pbPickList').innerHTML = html || '<div style="padding:12px;color:#999;font-size:0.85rem">' +
-        (L.length ? 'Aucun résultat.' : 'Aucun licencié enregistré (l\'admin peut les ajouter dans l\'onglet Utilisateurs). Vous pouvez quand même ajouter des invités ci-dessous.') + '</div>';
-    }
-    function renderGuests() {
-      $('pbGuestList').innerHTML = guests.map((g, idx) =>
-        `<span class="pb-guest-chip">${esc(g)} <button type="button" data-g="${idx}" title="Retirer">✕</button></span>`).join('');
-      updateTotal();
-    }
-    function addGuest() {
-      const input = $('pbGuestInput');
-      const name = clean(input.value);
-      if (!name) return;
-      const m = find(name);
-      if (m) {
-        sel.add(m);
-        notify('« ' + m + ' » est licencié : coché dans la liste');
-        renderList();
-      } else if (!guests.some(g => key(g) === key(name))) {
-        guests.push(name);
-      }
-      input.value = '';
-      renderGuests();
-      input.focus();
-    }
-    const close = () => overlay.remove();
-
-    overlay.addEventListener('change', e => {
-      const cb = e.target.closest('input[data-idx]');
-      if (!cb) return;
-      const n = L[+cb.dataset.idx];
-      if (cb.checked) sel.add(n); else sel.delete(n);
-      updateTotal();
-    });
-    overlay.addEventListener('click', e => {
-      const rm = e.target.closest('button[data-g]');
-      if (rm) { guests.splice(+rm.dataset.g, 1); renderGuests(); }
-    });
-    $('pbPickFilter').addEventListener('input', renderList);
-    $('pbGuestAdd').addEventListener('click', addGuest);
-    $('pbGuestInput').addEventListener('keydown', e => { if (e.key === 'Enter') { e.preventDefault(); addGuest(); } });
-    $('pbPickCancel').addEventListener('click', close);
-    $('pbPickOk').addEventListener('click', () => {
-      const names = L.filter(n => sel.has(n)).concat(guests);
-      const c = names.length;
-      if (c === 0) { alert('Sélectionne au moins un joueur.'); return; }
-      if (c > max) { alert('Maximum ' + max + ' joueurs pour ' + TERRAINS + ' terrains (' + c + ' sélectionnés).'); return; }
-      const target = (opts.find(o => o.value >= c) || { value: c }).value;
-      let msg = 'Remplacer la liste des joueurs par ces ' + c + ' noms ?';
-      if (target > c) msg += '\nLa configuration la plus proche est ' + target + ' joueurs : les ' + (target - c) + ' place(s) restante(s) resteront « Joueur N ».';
-      if (typeof tournamentGenerated !== 'undefined' && tournamentGenerated) msg += '\nAttention : un tournoi est déjà généré.';
-      if (!confirm(msg)) return;
-      const select = document.getElementById('playerCount');
-      if (select) select.value = String(target);
-      if (typeof changePlayerCount === 'function') changePlayerCount();
-      names.forEach((nm, idx) => {
-        const el = document.getElementById('player' + (idx + 1));
-        if (el) el.value = nm;
+    document.body.appendChild(ov);
+    const upd = () => {
+      const c = ov.querySelectorAll('#licPickList input:checked').length;
+      const g = ov.querySelector('#licPickGuests').value.split(/[\n;]+/).filter(s => s.trim()).length;
+      const total = c + g;
+      const opts = (PLAYER_OPTIONS_BY_TERRAIN[TERRAINS] || PLAYER_OPTIONS_BY_TERRAIN[5]).map(o => o.value);
+      const max = opts[opts.length - 1], min = opts[0];
+      let msg = c + ' licencié(s) + ' + g + ' invité(s) = ' + total + ' joueur(s)';
+      if (total > max) msg += ' — ⚠ maximum ' + max + ' pour ' + TERRAINS + ' terrains';
+      else if (total < min) msg += ' — ⚠ minimum ' + min + ' pour ' + TERRAINS + ' terrains';
+      $('licPickInfo').textContent = msg;
+    };
+    ov.addEventListener('change', upd);
+    ov.querySelector('#licPickGuests').addEventListener('input', upd);
+    ov.querySelector('#licPickSearch').addEventListener('input', (e) => {
+      const qt = norm(e.target.value).split(' ').filter(Boolean);
+      ov.querySelectorAll('#licPickList .lic-row').forEach(row => {
+        const words = row.dataset.n.split(' ');
+        row.style.display = qt.every(t => words.some(w => w.startsWith(t))) ? '' : 'none';
       });
-      saveSoon();
-      close();
-      syncPlayers();
-      notify(c + ' joueur(s) renseigné(s)');
     });
-    renderList();
-    renderGuests();
-  }
-
-  // ── Carte admin : gestion de la liste des licenciés ──
-  function renderAdmin() {
-    const body = document.getElementById('pbLicBody');
-    if (!body) return;
-    const L = lic();
-    const cnt = document.getElementById('pbLicCount');
-    if (cnt) cnt.textContent = L.length;
-    const fEl = document.getElementById('pbLicFilter');
-    const f = norm(fEl ? fEl.value : '');
-    const rows = [];
-    L.forEach((n, idx) => {
-      if (f && !norm(n).includes(f)) return;
-      rows.push('<tr><td>' + (idx + 1) + '</td><td>' + esc(n) + '</td>'
-        + '<td class="no-print" style="white-space:nowrap">'
-        + '<button class="btn" style="padding:4px 8px;margin:0 2px" data-pbadm="edit" data-idx="' + idx + '" title="Corriger le nom"><i class="fas fa-pen"></i></button>'
-        + '<button class="btn" style="padding:4px 8px;margin:0 2px;background:var(--danger)" data-pbadm="del" data-idx="' + idx + '" title="Supprimer"><i class="fas fa-trash"></i></button>'
-        + '</td></tr>');
+    ov.querySelector('#licPickClear').addEventListener('click', () => {
+      ov.querySelectorAll('#licPickList input').forEach(c => { c.checked = false; });
+      upd();
     });
-    body.innerHTML = rows.join('') || '<tr><td colspan="3" style="color:#999;font-size:0.8rem;padding:10px">Aucun licencié pour le moment.</td></tr>';
-  }
-  window.pbRenderAdmin = renderAdmin;
+    upd();
+  };
+  window.applyLicPicker = function () {
+    const ov = $('licPickerModal');
+    if (!ov) return;
+    const r = roster();
+    const picked = [...ov.querySelectorAll('#licPickList input:checked')].map(c => r[parseInt(c.dataset.k, 10)]);
+    const guests = ov.querySelector('#licPickGuests').value.split(/[\n;]+/).map(titleCase).filter(Boolean);
+    const seen = new Set();
+    const names = [];
+    picked.concat(guests).forEach(n => {
+      const k = keyOf(n);
+      if (!k || seen.has(k)) return;
+      seen.add(k);
+      names.push(rosterByKey.get(k) || n);
+    });
+    if (!names.length) { alert('Sélectionnez au moins un joueur.'); return; }
 
-  window.pbAdminAdd = async function () {
-    const input = document.getElementById('pbLicNew');
-    if (!input) return;
-    const n = await window.pbAddLicensees([input.value]);
-    if (n) input.value = '';
-    input.focus();
-  };
-  function parseNames(txt) {
-    const sep = /[\r\n]/.test(txt) ? /[\r\n;]+/ : /[;,]+/;
-    return txt.split(sep).map(s => clean(s.replace(/^\s*(?:\d+\s*[.)\-:]|[-•*])\s*/, ''))).filter(Boolean);
-  }
-  window.pbAdminBulk = async function () {
-    const ta = document.getElementById('pbLicBulk');
-    if (!ta) return;
-    const names = parseNames(ta.value);
-    if (names.length === 0) { alert('Colle une liste de noms (un par ligne).'); return; }
-    const n = await window.pbAddLicensees(names);
-    if (n) ta.value = '';
-  };
-  window.pbAdminFromRegs = async function () {
-    const names = (window.REG_LIST || []).map(r => r && r.name).filter(Boolean);
-    if (names.length === 0) { alert('Aucun inscrit pour le moment.'); return; }
-    await window.pbAddLicensees(names);
+    const valid = (PLAYER_OPTIONS_BY_TERRAIN[TERRAINS] || PLAYER_OPTIONS_BY_TERRAIN[5]).map(o => o.value);
+    let target = valid.find(v => v >= names.length);
+    let extra = 0;
+    if (!target) { target = valid[valid.length - 1]; extra = names.length - target; }
+    let msg = names.length + ' joueur(s) vont remplacer la liste actuelle (configuration à ' + target + ' joueurs).';
+    if (extra > 0) msg += '\n⚠ Les ' + extra + ' dernier(s) ne seront pas pris (maximum ' + target + ' pour ' + TERRAINS + ' terrains).';
+    if (names.length < target) msg += '\n' + (target - names.length) + ' champ(s) resteront à compléter.';
+    if (tournamentGenerated) msg += '\n⚠ Un tournoi est déjà généré : le changer peut perturber les matchs en cours.';
+    if (!confirm(msg + '\nContinuer ?')) return;
+
+    const select = $('playerCount');
+    if (select) select.value = String(target);
+    N = target;
+    updateActiveCount();
+    ensurePositions();
+    buildPlayerInputs();
+    names.slice(0, target).forEach((n, k) => { const el = $('player' + (k + 1)); if (el) el.value = n; });
+    scheduleAutoSave();
+    closeLicPicker();
+    decorate();
+    showNotice(Math.min(names.length, target) + ' joueur(s) placé(s)');
   };
 
-  document.addEventListener('click', async function (e) {
-    const b = e.target.closest('[data-pbadm]');
-    if (!b) return;
-    const L = lic();
-    const old = L[+b.dataset.idx];
-    if (!old) return;
-    try {
-      if (b.dataset.pbadm === 'del') {
-        if (!confirm('Supprimer « ' + old + ' » des licenciés ?')) return;
-        await window.fbRemoveLicensee(old);
-        notify('Licencié supprimé');
-      } else {
-        const nv = clean(prompt('Corriger le nom :', old) || '');
-        if (!nv || nv === old) return;
-        if (key(nv) !== key(old) && L.some(n => key(n) === key(nv))) { alert('« ' + nv + ' » existe déjà dans la liste.'); return; }
-        await window.fbSetLicensees(L.map(n => n === old ? nv : n));
-        notify('Nom corrigé (les anciens tournois et le bilan de saison ne sont pas modifiés)');
+  // ── Gestion de la liste (admin) ──
+  window.closeLicManager = function () { const m = $('licManagerModal'); if (m) m.remove(); };
+  async function saveRoster(arr) {
+    try { await window.fbSaveLicencies(arr); return true; }
+    catch (e) { alert('Impossible d\'enregistrer la liste : ' + e.message); return false; }
+  }
+  function renderManagerList() {
+    const box = $('licMgList');
+    if (!box) return;
+    const q = norm(($('licMgSearch') || {}).value || '').split(' ').filter(Boolean);
+    const r = roster();
+    $('licMgTitle').textContent = 'Licenciés de la saison (' + r.length + ')';
+    const rows = r.map((n, k) => ({ n, k })).filter(({ n }) => {
+      const words = norm(n).split(' ');
+      return q.every(t => words.some(w => w.startsWith(t)));
+    });
+    box.innerHTML = rows.length ? rows.map(({ n, k }) => `
+      <div class="lic-row mg"><span>${esc(n)}</span>
+        <span style="display:flex;gap:6px">
+          <button class="btn secondary" style="margin:0;padding:4px 10px;min-height:30px" data-act="ren" data-k="${k}"><i class="fas fa-pen"></i></button>
+          <button class="btn" style="margin:0;padding:4px 10px;min-height:30px;background:var(--danger)" data-act="del" data-k="${k}"><i class="fas fa-trash"></i></button>
+        </span></div>`).join('')
+      : '<div style="padding:14px;color:#999;font-size:.85rem;text-align:center">Aucun licencié' + (q.length ? ' ne correspond.' : ' pour le moment.') + '</div>';
+  }
+  window.openLicManager = function () {
+    if (!isAdminUI()) return;
+    closeLicManager();
+    const ov = document.createElement('div');
+    ov.className = 'modal-overlay';
+    ov.id = 'licManagerModal';
+    ov.innerHTML = `
+      <div class="modal-box" style="max-width:460px;max-height:94vh;display:flex;flex-direction:column">
+        <h3><i class="fas fa-id-card"></i> <span id="licMgTitle">Licenciés de la saison</span></h3>
+        <label style="font-size:.8rem;font-weight:600">Ajouter des licenciés (un nom par ligne, « Prénom Nom »)</label>
+        <textarea id="licMgAdd" class="player-input" rows="4" style="margin:4px 0" placeholder="Jean Dupont&#10;Marie Durand&#10;…"></textarea>
+        <button class="btn success" style="margin:0 0 8px 0" id="licMgAddBtn"><i class="fas fa-plus"></i> Ajouter à la liste</button>
+        <input type="text" id="licMgSearch" class="player-input" placeholder="Rechercher dans la liste…" autocomplete="off">
+        <div class="lic-list" id="licMgList"></div>
+        <div style="display:flex;gap:8px">
+          <button class="btn" style="flex:0 0 auto;margin:0;background:#999" id="licMgClear"><i class="fas fa-trash"></i> Vider</button>
+          <button class="btn secondary" style="flex:1;margin:0" onclick="closeLicManager()">Fermer</button>
+        </div>
+      </div>`;
+    document.body.appendChild(ov);
+    renderManagerList();
+    ov.querySelector('#licMgSearch').addEventListener('input', renderManagerList);
+    ov.querySelector('#licMgAddBtn').addEventListener('click', async () => {
+      const ta = $('licMgAdd');
+      const lines = ta.value.split(/[\n;]+/).map(titleCase).filter(Boolean);
+      if (!lines.length) return;
+      const have = new Set(roster().map(keyOf));
+      const fresh = [];
+      let skipped = 0;
+      lines.forEach(n => { const k = keyOf(n); if (!k) return; if (have.has(k)) { skipped++; return; } have.add(k); fresh.push(n); });
+      if (!fresh.length) { alert('Ces noms sont déjà tous dans la liste.'); return; }
+      if (await saveRoster(roster().concat(fresh))) {
+        ta.value = '';
+        showNotice(fresh.length + ' ajouté(s)' + (skipped ? ', ' + skipped + ' déjà présent(s)' : ''));
       }
-    } catch (err) {
-      alert('Erreur : ' + (err && err.message ? err.message : err));
-    }
-  });
+    });
+    ov.querySelector('#licMgList').addEventListener('click', async (e) => {
+      const b = e.target.closest('button[data-act]');
+      if (!b) return;
+      const r = roster();
+      const k = parseInt(b.dataset.k, 10);
+      const old = r[k];
+      if (b.dataset.act === 'del') {
+        if (confirm('Retirer « ' + old + ' » de la liste des licenciés ?')) await saveRoster(r.filter((_, i) => i !== k));
+      } else {
+        const nv = prompt('Corriger le nom :', old);
+        if (nv == null) return;
+        const t = titleCase(nv);
+        if (!t || t === old) return;
+        const kk = keyOf(t);
+        if (r.some((n, i) => i !== k && keyOf(n) === kk)) { alert('Ce nom existe déjà dans la liste.'); return; }
+        await saveRoster(r.map((n, i) => i === k ? t : n));
+      }
+    });
+    ov.querySelector('#licMgClear').addEventListener('click', async () => {
+      if (!roster().length) return;
+      if (confirm('Vider toute la liste des licenciés (' + roster().length + ' noms) ? À faire pour une nouvelle saison.')) await saveRoster([]);
+    });
+  };
 
-  window.addEventListener('pb-licensees', () => { renderAdmin(); syncPlayers(); });
-  document.addEventListener('DOMContentLoaded', () => { renderAdmin(); syncPlayers(); });
-  setInterval(syncPlayers, 1200);
+  rebuildMap();
+  decorate();
 })();
 </script>
-
 </body>
 </html>
