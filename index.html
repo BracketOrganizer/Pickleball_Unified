@@ -529,6 +529,13 @@ function startLicenseesWatch() {
 }
 startLicenseesWatch();
 
+// Relance immédiate des écouteurs (chrono, licenciés) une fois connecté
+window.pbKickWatchers = function () {
+  Object.keys(timerWanted).forEach(k => { if (timerWanted[k] && !timerUnsubs[k]) watchTimer(k); });
+  watchTimerMode();
+  startLicenseesWatch();
+};
+
 window.fbAddLicensees = async function (names) {
   if (!isScorer()) throw new Error('Réservé aux rôles admin / scorer.');
   const cleaned = [...new Set((names || []).map(n => (n || '').trim()).filter(Boolean))];
@@ -797,10 +804,15 @@ let timerAlerted = {};
 let beepedSeconds = {}; // clé -> Set des secondes déjà "bipées" pour le décompte en cours (30s, 5,4,3,2,1)
 
 function timerDocId(key) { return key === 'global' ? 'timer' : ('timer_terrain_' + key); }
+// Reprise automatique des écouteurs du chrono : s'ils échouent (ex. avant la
+// connexion), ils étaient définitivement coupés et le chrono ne s'affichait plus.
+const timerWanted = {}, timerRetryMs = {};
 
 function watchTimer(key) {
+  timerWanted[key] = true;
   if (timerUnsubs[key]) return;
   timerUnsubs[key] = onSnapshot(doc(db, 'tournamentStatus', timerDocId(key)), (snap) => {
+    timerRetryMs[key] = 3000;
     const d = snap.exists() ? snap.data() : {};
     TIMER_STATES[key] = {
       durationSeconds: d.durationSeconds || 900,
@@ -813,23 +825,38 @@ function watchTimer(key) {
     const minEl = document.getElementById(key === 'global' ? 'chronoMinutes' : ('chronoMinutes_' + key));
     if (minEl && document.activeElement !== minEl) minEl.value = Math.round(TIMER_STATES[key].durationSeconds / 60);
     renderTimerDisplay(key);
-  }, (e) => console.warn('watchTimer error (' + key + '):', e));
+  }, (e) => {
+    console.warn('watchTimer error (' + key + '):', e);
+    delete timerUnsubs[key];
+    const wait = timerRetryMs[key] || 3000;
+    timerRetryMs[key] = Math.min(wait * 2, 60000);
+    setTimeout(() => { if (timerWanted[key] && !timerUnsubs[key]) watchTimer(key); }, wait);
+  });
 }
 function unwatchTimer(key) {
+  timerWanted[key] = false;
   if (timerUnsubs[key]) { timerUnsubs[key](); delete timerUnsubs[key]; }
 }
 
 // Mode chrono (partagé / par terrain), lui-même synchronisé via Firestore
 // pour que le réglage soit identique sur tous les appareils.
+let timerModeUnsub = null, timerModeRetry = 3000;
 function watchTimerMode() {
-  onSnapshot(doc(db, 'tournamentStatus', 'timerMode'), (snap) => {
+  if (timerModeUnsub) return;
+  timerModeUnsub = onSnapshot(doc(db, 'tournamentStatus', 'timerMode'), (snap) => {
+    timerModeRetry = 3000;
     const perTerrain = !!(snap.exists() && snap.data().perTerrain);
     if (perTerrain === TIMER_PER_TERRAIN) return;
     TIMER_PER_TERRAIN = perTerrain;
     const toggle = document.getElementById('chronoPerTerrainToggle');
     if (toggle) toggle.checked = perTerrain;
     applyChronoModeUI();
-  }, (e) => console.warn('watchTimerMode error:', e));
+  }, (e) => {
+    console.warn('watchTimerMode error:', e);
+    timerModeUnsub = null;
+    setTimeout(watchTimerMode, timerModeRetry);
+    timerModeRetry = Math.min(timerModeRetry * 2, 60000);
+  });
 }
 window.toggleChronoPerTerrain = async function () {
   if (!isScorer()) return;
@@ -1414,6 +1441,7 @@ onAuthStateChanged(auth, async (user) => {
     await ensureUserDoc(user);
     const profile = await getUserProfile(user.uid);
     USER_ROLES = profile.roles;
+    if (window.pbKickWatchers) window.pbKickWatchers();
 
     if (isScorer()) {
       showApp();
