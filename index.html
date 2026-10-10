@@ -803,6 +803,40 @@ let timerTickInterval = null;
 let timerAlerted = {};
 let beepedSeconds = {}; // clé -> Set des secondes déjà "bipées" pour le décompte en cours (30s, 5,4,3,2,1)
 
+// Horloge commune à tous les appareils (voir estimateClockOffset ci-dessous)
+var clockOffsetMs = 0; // (var : évite toute erreur si le chrono est calculé avant cette ligne)
+function serverNow() { return Date.now() + (clockOffsetMs || 0); }
+// Calibration d'horloge (précision ~100 ms) : on interroge le serveur web en rafale et on repère
+// l'instant exact où l'en-tête HTTP « Date » change de seconde. Ainsi tous les appareils (PC dont
+// l'horloge dérive, mobiles) calculent le chrono sur la même heure, même avec quelques secondes d'écart.
+var _clkBusy = false;
+async function estimateClockOffset(){
+  if(_clkBusy) return; _clkBusy = true;
+  try {
+    if(!/^https?:$/.test(location.protocol)) return;
+    const base = location.href.split('#')[0].split('?')[0];
+    const offs = []; let prev = null;
+    for(let i=0; i<30 && offs.length<2; i++){
+      const t0 = Date.now();
+      const r = await fetch(base+'?_clk='+t0+'_'+i, { method:'HEAD', cache:'no-store' });
+      const t1 = Date.now();
+      const h = r.headers.get('date'); if(!h) return;
+      const ms = new Date(h).getTime(); if(isNaN(ms)) return;
+      const cur = { sec: Math.floor(ms/1000), mid: (t0+t1)/2 };
+      // la seconde du serveur a changé entre les deux mesures : la frontière est entre prev.mid et cur.mid
+      if(prev && cur.sec > prev.sec && cur.sec - prev.sec <= 2) offs.push(cur.sec*1000 - (prev.mid+cur.mid)/2);
+      prev = cur;
+    }
+    if(offs.length){
+      const off = offs.reduce((a,b)=>a+b,0)/offs.length;
+      clockOffsetMs = Math.abs(off) > 400 ? Math.round(off) : 0;
+    }
+  } catch(e){ /* pas de correction possible : on garde l'horloge locale */ }
+  finally { _clkBusy = false; }
+}
+estimateClockOffset();
+setInterval(estimateClockOffset, 15*60*1000);
+
 function timerDocId(key) { return key === 'global' ? 'timer' : ('timer_terrain_' + key); }
 // Reprise automatique des écouteurs du chrono : s'ils échouent (ex. avant la
 // connexion), ils étaient définitivement coupés et le chrono ne s'affichait plus.
@@ -912,7 +946,7 @@ function computeTimerRemaining(key) {
   const st = TIMER_STATES[key] || TIMER_STATES.global;
   if (st.running && st.endsAt) {
     const end = new Date(st.endsAt).getTime();
-    return Math.max(0, Math.round((end - Date.now()) / 1000));
+    return Math.max(0, Math.round((end - serverNow()) / 1000));
   }
   return Math.max(0, st.remainingSeconds || 0);
 }
@@ -1042,7 +1076,7 @@ window.startTimer = async function (key) {
   const remaining = computeTimerRemaining(key) || (TIMER_STATES[key] || TIMER_STATES.global).durationSeconds;
   try {
     await setDoc(doc(db, 'tournamentStatus', timerDocId(key)), {
-      running: true, remainingSeconds: remaining, endsAt: new Date(Date.now() + remaining * 1000).toISOString()
+      running: true, remainingSeconds: remaining, endsAt: new Date(serverNow() + remaining * 1000).toISOString()
     }, { merge: true });
   } catch (e) { alert('Erreur : ' + e.message); }
 };
