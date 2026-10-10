@@ -396,7 +396,7 @@ import {
   signInWithRedirect, signInWithPopup, getRedirectResult, GoogleAuthProvider, signOut
 } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-auth.js';
 import {
-  getFirestore, doc, getDoc, setDoc, updateDoc, deleteDoc, onSnapshot,
+  getFirestore, doc, getDoc, setDoc, updateDoc, deleteDoc, onSnapshot, disableNetwork, enableNetwork,
   collection, serverTimestamp, addDoc, getDocs, arrayUnion, arrayRemove
 } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js';
 
@@ -1694,16 +1694,17 @@ function subscribeToTournament() {
   // Filet de sécurité mobile : certains navigateurs (iOS Safari en
   // particulier) suspendent la connexion temps réel (WebSocket) quand la
   // page passe en arrière-plan ou que l'écran se verrouille, et ne la
-  // rétablissent pas toujours correctement. Ce sondage toutes les 4
+  // rétablissent pas toujours correctement. Ce sondage toutes les 30
   // secondes va chercher l'état actuel pour rattraper les mises à jour
   // manquées (ex. une réinitialisation faite sur un autre appareil).
   if (!tournamentPollInterval) {
     tournamentPollInterval = setInterval(async () => {
+      if (document.hidden) return; // inutile quand l'écran est éteint ou l'onglet masqué
       try {
         const snap = await getDoc(doc(db, 'tournament', 'current'));
         if (snap.exists()) applyTournamentData(snap.data());
       } catch (e) { /* silencieux : le listener temps réel reste la source principale */ }
-    }, 4000);
+    }, 30000);
   }
 }
 let unsubMessages = null, TV_MESSAGES = [];
@@ -1972,6 +1973,33 @@ window.adminDeleteUser = async function (uid, name) {
     alert('Erreur : ' + e.message);
   }
 };
+
+// ══════════════════════════════════════════════════════════
+// ÉCONOMIE DE LECTURES FIRESTORE (spectateurs)
+// Un spectateur dont l'appli reste masquée (onglet en arrière-plan, écran éteint)
+// plus de 10 minutes ne reçoit plus les mises à jour (chacune compterait comme une
+// lecture) : la connexion Firestore est mise en pause, puis rétablie dès qu'il revient.
+// Ne s'applique ni à l'admin / scorer, ni à l'écran TV.
+// ══════════════════════════════════════════════════════════
+const BG_PAUSE_MS = 10 * 60 * 1000;
+let _bgPauseTimer = null, _bgPaused = false;
+function isBackgroundPausable() {
+  return isSpectateurOnly();
+}
+document.addEventListener('visibilitychange', () => {
+  if (document.hidden) {
+    clearTimeout(_bgPauseTimer);
+    _bgPauseTimer = setTimeout(async () => {
+      if (!document.hidden || _bgPaused || !isBackgroundPausable()) return;
+      try { await disableNetwork(db); _bgPaused = true; } catch (e) { /* ignore */ }
+    }, BG_PAUSE_MS);
+  } else {
+    clearTimeout(_bgPauseTimer); _bgPauseTimer = null;
+    if (_bgPaused) { _bgPaused = false; enableNetwork(db).catch(() => {}); }
+    // Au retour : on rattrape tout de suite l'état du tournoi (le sondage ne tourne plus qu'écran visible)
+    if (tournamentPollInterval) getDoc(doc(db, 'tournament', 'current')).then(snap => { if (snap.exists()) applyTournamentData(snap.data()); }).catch(() => {});
+  }
+});
 </script>
 
 </head>
