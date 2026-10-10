@@ -859,7 +859,7 @@ function watchTimerMode() {
   });
 }
 window.toggleChronoPerTerrain = async function () {
-  if (!isScorer()) return;
+  if (!isAdmin()) return; // choix du mode (chrono unique / par terrain) réservé à l'admin
   const toggle = document.getElementById('chronoPerTerrainToggle');
   const perTerrain = !!(toggle && toggle.checked);
   try {
@@ -2170,7 +2170,7 @@ window.adminDeleteUser = async function (uid, name) {
   <div id="matchesTab" class="tab">
     <div class="card">
       <span class="card-title"><i class="fas fa-stopwatch"></i> Chrono du match</span>
-      <div data-role="scorer" style="text-align:center;margin-bottom:8px;font-size:0.8rem">
+      <div data-role="admin" style="text-align:center;margin-bottom:8px;font-size:0.8rem">
         <label style="cursor:pointer"><input type="checkbox" id="chronoPerTerrainToggle" onchange="toggleChronoPerTerrain()"> Chronos indépendants par terrain (décoché = un seul chrono partagé)</label>
       </div>
       <div id="chronoGlobalPanel">
