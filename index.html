@@ -442,12 +442,25 @@ function isAdmin()  { return USER_ROLES.includes('admin'); }
 function isScorer() { return USER_ROLES.includes('admin') || USER_ROLES.includes('scorer'); }
 function isSpectateurOnly() { return USER_ROLES.includes('spectateur') && !isScorer(); }
 
+// ── Interrupteur admin « Chrono visible sur les mobiles » ───────────────
+// Réglage stocké dans le document de statut Live (déjà écouté par tous : aucune lecture en plus).
+// Décoché : les spectateurs (mobiles) n'écoutent plus le chrono du tout (0 lecture) ;
+// il reste actif pour l'admin / scorer et sur l'écran TV.
+var CHRONO_MOBILE = true, CHRONO_STATUS_KNOWN = false;
+function applyChronoMobileFlag(d) {
+  CHRONO_MOBILE = !d || d.chronoMobile !== false;
+  CHRONO_STATUS_KNOWN = true;
+  const t = document.getElementById('chronoMobileToggle'); if (t) t.checked = CHRONO_MOBILE;
+  try { reconcileChrono(); } catch (e) { /* pas encore initialisé */ }
+}
+
 // ── Surveillance permanente du statut Live (nécessaire avant même la connexion,
 //    pour savoir si le bouton "Mode Spectateur" doit s'activer) ─────────────
 function startLiveWatch() {
   if (unsubLiveStatus) return;
   unsubLiveStatus = onSnapshot(doc(db, 'tournamentStatus', 'live'), (snap) => {
     LIVE_OPEN = snap.exists() && snap.data().liveOpen === true;
+    applyChronoMobileFlag(snap.exists() ? snap.data() : null);
     updateLiveToggleBadge();
     // Si un(e) spectateur/spectatrice est connecté(e) et que l'admin ferme le Live,
     // on le renvoie à l'écran de connexion.
@@ -843,6 +856,7 @@ function timerDocId(key) { return key === 'global' ? 'timer' : ('timer_terrain_'
 const timerWanted = {}, timerRetryMs = {};
 
 function watchTimer(key) {
+  if (!chronoWanted()) return; // interrupteur admin « Chrono visible sur les mobiles »
   timerWanted[key] = true;
   if (timerUnsubs[key]) return;
   timerUnsubs[key] = onSnapshot(doc(db, 'tournamentStatus', timerDocId(key)), (snap) => {
@@ -876,7 +890,7 @@ function unwatchTimer(key) {
 // pour que le réglage soit identique sur tous les appareils.
 let timerModeUnsub = null, timerModeRetry = 3000;
 function watchTimerMode() {
-  if (timerModeUnsub) return;
+  if (timerModeUnsub || !chronoWanted()) return;
   timerModeUnsub = onSnapshot(doc(db, 'tournamentStatus', 'timerMode'), (snap) => {
     timerModeRetry = 3000;
     const perTerrain = !!(snap.exists() && snap.data().perTerrain);
@@ -941,6 +955,34 @@ function buildChronoPerTerrainPanel() {
 }
 watchTimerMode();
 watchTimer('global');
+
+// ── Chrono : écoute active seulement si nécessaire (voir l'interrupteur admin plus haut) ──
+function chronoWanted() {
+  let tv = false; try { tv = !!ecranOpen; } catch (e) { /* écran TV pas encore initialisé */ }
+  return isScorer() || tv || (CHRONO_STATUS_KNOWN && CHRONO_MOBILE);
+}
+let _chronoActive = null;
+function reconcileChrono() {
+  const want = chronoWanted();
+  if (want !== _chronoActive) {
+    _chronoActive = want;
+    if (want) { watchTimerMode(); applyChronoModeUI(); }
+    else {
+      Object.keys(timerUnsubs).forEach(k => { try { timerUnsubs[k](); } catch (e) {} delete timerUnsubs[k]; });
+      if (timerModeUnsub) { try { timerModeUnsub(); } catch (e) {} timerModeUnsub = null; }
+    }
+  }
+  const g = document.getElementById('chronoGlobalPanel'), card = g && g.closest('.card');
+  if (card) { const d = want ? '' : 'none'; if (card.style.display !== d) card.style.display = d; }
+}
+setInterval(reconcileChrono, 1000);
+window.toggleChronoMobile = async function () {
+  if (!isAdmin()) return;
+  const t = document.getElementById('chronoMobileToggle');
+  const on = !!(t && t.checked);
+  try { await setDoc(doc(db, 'tournamentStatus', 'live'), { chronoMobile: on }, { merge: true }); }
+  catch (e) { if (t) t.checked = CHRONO_MOBILE; alert('Erreur : ' + (e && e.message ? e.message : e)); }
+};
 
 function computeTimerRemaining(key) {
   const st = TIMER_STATES[key] || TIMER_STATES.global;
@@ -2234,6 +2276,9 @@ document.addEventListener('visibilitychange', () => {
       <span class="card-title"><i class="fas fa-stopwatch"></i> Chrono du match</span>
       <div data-role="admin" style="text-align:center;margin-bottom:8px;font-size:0.8rem">
         <label style="cursor:pointer"><input type="checkbox" id="chronoPerTerrainToggle" onchange="toggleChronoPerTerrain()"> Chronos indépendants par terrain (décoché = un seul chrono partagé)</label>
+      </div>
+      <div data-role="admin" style="text-align:center;margin-bottom:8px;font-size:0.8rem">
+        <label style="cursor:pointer"><input type="checkbox" id="chronoMobileToggle" checked onchange="toggleChronoMobile()"> 📱 Chrono visible sur les mobiles (décoché = aucune lecture pour les spectateurs ; le chrono reste sur l'écran TV)</label>
       </div>
       <div id="chronoGlobalPanel">
         <div id="chronoDisplay" style="text-align:center;font-size:2.6rem;font-weight:800;font-variant-numeric:tabular-nums;color:var(--primary);margin:6px 0">15:00</div>
