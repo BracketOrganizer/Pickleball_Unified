@@ -30,6 +30,12 @@
   .tabs{display:flex;gap:2px;margin-bottom:10px;background:#f8f9fa;padding:4px;border-radius:8px;flex-wrap:nowrap;overflow-x:auto;-webkit-overflow-scrolling:touch;scrollbar-width:thin}
   .tab-btn{padding:8px 12px;border-radius:6px;border:none;background:#e9ecef;cursor:pointer;font-weight:600;font-size:0.75rem;color:#495057;min-height:36px;flex:0 0 auto;white-space:nowrap}
   .tab-btn.active{background:var(--primary);color:white}
+  .session-bar{display:none;gap:8px;align-items:center;flex-wrap:wrap;justify-content:center;margin:0 0 10px;padding:8px;background:#f3e5f5;border-radius:8px}
+  .session-btn{padding:9px 16px;border-radius:6px;border:2px solid var(--primary);background:#fff;color:var(--primary);cursor:pointer;font-weight:700;font-size:0.85rem;min-height:38px}
+  .session-btn.active{background:var(--primary);color:#fff}
+  .s2-hidden{display:none !important}
+  .rank-view-btn{padding:6px 12px;border-radius:6px;border:2px solid var(--primary);background:#fff;color:var(--primary);cursor:pointer;font-weight:600;font-size:0.78rem}
+  .rank-view-btn.active{background:var(--primary);color:#fff}
   .tab{display:none}
   .tab.active{display:block}
   .card{background:white;padding:10px;border-radius:8px;margin-bottom:10px;box-shadow:0 2px 8px rgba(0,0,0,0.06);border:1px solid #e6e6e6}
@@ -371,6 +377,7 @@
   .ecran-score{font-size:1.6rem;font-weight:800;color:#4caf50}
   .ecran-vs{text-align:center;opacity:0.5;font-size:0.8rem;margin:2px 0}
   .ecran-rest{text-align:center;font-size:0.9rem;opacity:0.6;margin-top:8px}
+  .ecran-session-title{font-size:1.5rem;font-weight:800;text-align:center;margin:8px 0 16px;padding:8px 12px;border-radius:10px;background:rgba(206,147,216,0.22);color:#fff}
   .ecran-ranking-table{width:100%;border-collapse:collapse;font-size:1.05rem}
   .ecran-ranking-table th{background:rgba(255,255,255,0.15);padding:8px;text-align:left}
   .ecran-ranking-table td{padding:8px;border-bottom:1px solid rgba(255,255,255,0.1)}
@@ -772,7 +779,7 @@ window.importRegistrationsToPlayers = function () {
     const names = list.map(r => (r.name || '').trim()).filter(Boolean);
     if (names.length === 0) { alert('Aucun inscrit à importer pour le moment.'); return; }
 
-    const options = PLAYER_OPTIONS_BY_TERRAIN[TERRAINS] || PLAYER_OPTIONS_BY_TERRAIN[5];
+    const options = (CUR_SESSION === 2 && TERRAINS === 3) ? PLAYER_OPTIONS_SESSION2 : (PLAYER_OPTIONS_BY_TERRAIN[TERRAINS] || PLAYER_OPTIONS_BY_TERRAIN[5]);
     const validValues = options.map(o => o.value);
     let target = validValues.find(v => v >= names.length);
     let extra = 0;
@@ -1899,13 +1906,23 @@ window.fbSaveTournament = async function (payload) {
   if (isAdmin()) {
     await setDoc(ref, Object.assign({}, payload, meta), { merge: true });
   } else {
-    await updateDoc(ref, Object.assign({
+    const upd = {
       matchScores: payload.matchScores,
       specialMatchScores: payload.specialMatchScores,
       playerReplacements: payload.playerReplacements,
       replacementLog: payload.replacementLog,
       generated: payload.generated
-    }, meta));
+    };
+    // 2ème séance : le scorer ne met à jour que les scores / remplacements / drapeau "généré"
+    // de la séance 2 (chemins pointés, pour ne pas écraser sa configuration).
+    if (payload.sessionMeta && payload.sessionMeta.enabled && payload.session2) {
+      upd['session2.matchScores'] = payload.session2.matchScores;
+      upd['session2.specialMatchScores'] = payload.session2.specialMatchScores;
+      upd['session2.playerReplacements'] = payload.session2.playerReplacements;
+      upd['session2.replacementLog'] = payload.session2.replacementLog;
+      upd['session2.generated'] = payload.session2.generated;
+    }
+    await updateDoc(ref, Object.assign(upd, meta));
   }
 };
 
@@ -2230,7 +2247,35 @@ document.addEventListener('visibilitychange', () => {
     <button class="tab-btn" data-tab="adminTab" data-role="admin" onclick="showTab('adminTab', this)"><i class="fas fa-user-shield"></i> Utilisateurs</button>
   </div>
 
+  <div id="sessionBar" class="session-bar no-print">
+    <button type="button" id="sessBtn1" class="session-btn active" onclick="switchSession(1)">Séance 1</button>
+    <button type="button" id="sessBtn2" class="session-btn" onclick="switchSession(2)">Séance 2</button>
+    <span id="sessBarHint" style="font-size:0.78rem;color:#6a1b9a;font-weight:600"></span>
+  </div>
+
   <div id="playersTab" class="tab active">
+    <div class="card" data-role="admin" id="session2Card">
+      <span class="card-title"><i class="fas fa-clock"></i> 2ème séance (horaire décalé)</span>
+      <label style="display:flex;align-items:center;gap:8px;font-size:0.85rem;margin:8px 0;cursor:pointer">
+        <input type="checkbox" id="session2Enabled" style="width:18px;height:18px" onchange="toggleSession2()"> Activer la 2ème séance (plus de 16 inscrits)
+      </label>
+      <div class="player-row">
+        <div style="font-weight:600;min-width:130px;font-size:0.85rem;">Début séance 1 :</div>
+        <input type="time" id="sessionTime1" onchange="onSessionTimesChange()" style="padding:8px;border-radius:5px;border:2px solid #ddd;font-size:0.85rem;">
+      </div>
+      <div class="player-row">
+        <div style="font-weight:600;min-width:130px;font-size:0.85rem;">Début séance 2 :</div>
+        <input type="time" id="sessionTime2" onchange="onSessionTimesChange()" style="padding:8px;border-radius:5px;border:2px solid #ddd;font-size:0.85rem;">
+      </div>
+      <p style="font-size:0.78rem;color:#777;margin:6px 0">
+        La séance 1 reste inchangée. La séance 2 démarre à <strong>5 joueurs</strong> (programmes spéciaux 5, 6 et 7 joueurs),
+        puis reprend les programmes normaux de 8 à 16 joueurs. Un joueur peut jouer les deux séances : saisissez son nom à
+        l'identique dans les deux listes, ses points sont alors cumulés dans le classement général.
+        Basculez d'une séance à l'autre avec les boutons « Séance 1 / Séance 2 » sous les onglets.
+      </p>
+      <button class="btn" style="background:#999;margin:0" onclick="resetSession2()"><i class="fas fa-eraser"></i> Vider la séance 2</button>
+    </div>
+
     <div class="card" data-role="scorer">
       <span class="card-title"><i class="fas fa-user-friends"></i> Configuration</span>
       <div class="player-row">
@@ -2299,6 +2344,7 @@ document.addEventListener('visibilitychange', () => {
         <span class="card-title"><i class="fas fa-calendar-alt"></i> Planning des Matchs</span>
         <button class="btn secondary no-print" style="margin:0" onclick="printSection('matchesCard')"><i class="fas fa-print"></i> Imprimer</button>
       </div>
+      <div id="matchesSessionLabel" style="display:none;text-align:center;font-weight:700;color:#6a1b9a;background:#f3e5f5;border-radius:6px;padding:6px;margin:6px 0;font-size:0.85rem"></div>
       <div id="matchesDisplay">
         <p style="text-align:center;color:#666;padding:20px;font-size:0.9rem">Cliquez sur "Générer avec Validation" pour créer les matchs</p>
       </div>
@@ -2309,8 +2355,13 @@ document.addEventListener('visibilitychange', () => {
   <div id="rankingTab" class="tab">
     <div class="card" id="rankingCard">
       <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:6px">
-        <span class="card-title"><i class="fas fa-list-ol"></i> Classement</span>
+        <span class="card-title"><i class="fas fa-list-ol"></i> <span id="rankingTitle">Classement</span></span>
         <button class="btn secondary no-print" style="margin:0" onclick="printSection('rankingCard')"><i class="fas fa-print"></i> Imprimer</button>
+      </div>
+      <div id="rankingViewBar" class="no-print" style="display:none;gap:6px;flex-wrap:wrap;margin:8px 0">
+        <button type="button" class="rank-view-btn active" data-v="all" onclick="setRankView('all')">Général (S1 + S2)</button>
+        <button type="button" class="rank-view-btn" data-v="1" onclick="setRankView('1')">Séance 1</button>
+        <button type="button" class="rank-view-btn" data-v="2" onclick="setRankView('2')">Séance 2</button>
       </div>
       <div style="overflow-x:auto;">
         <table class="ranking">
@@ -2406,7 +2457,14 @@ document.addEventListener('visibilitychange', () => {
         nécessaire de le redéclarer à chaque tour. Il peut être annulé, ou un nouveau remplaçant désigné à son tour,
         à tout moment depuis l'écran des matchs.</p>
 
-        <h3><i class="fas fa-handshake"></i> 6. Fair-play</h3>
+        <h3><i class="fas fa-clock"></i> 6. Deux séances décalées (3 terrains)</h3>
+        <p>Lorsqu'il y a plus de 16 participants, une <strong>2ème séance</strong> est organisée en décalé horaire.
+        La séance 1 se déroule normalement. La séance 2 démarre dès 5 joueurs avec un programme adapté
+        (5 joueurs : 1 terrain avec un joueur au repos à chaque tour ; 6 joueurs : un match 2x2 et un match 1x1 ;
+        7 joueurs : un match 2x2 et un match 2x1), puis reprend les programmes habituels de 8 à 16 joueurs.
+        Un joueur peut participer aux deux séances. Le <strong>classement final cumule les points des deux séances</strong>.</p>
+
+        <h3><i class="fas fa-handshake"></i> 7. Fair-play</h3>
         <p>L'auto-arbitrage est de mise : les joueurs annoncent eux-mêmes le score au fur et à mesure du match.
         En cas de désaccord persistant sur une action, le point est rejoué. La ponctualité entre les tours et le
         respect du temps de jeu de tous permettent au tournoi de se dérouler dans de bonnes conditions pour l'ensemble
@@ -2779,6 +2837,11 @@ const PLAYER_OPTIONS_BY_TERRAIN = {
 
 // Texte informatif "terrains" affiche lors du changement de nombre de joueurs
 function getTerrainInfoText(terrains, n) {
+  if (terrains === 3 && CUR_SESSION === 2) {
+    if (n === 5) return "1 terrain + 1 repos par tour";
+    if (n === 6) return "2 terrains (dont 1x1)";
+    if (n === 7) return "2 terrains (dont 2x1)";
+  }
   if (terrains === 3) {
     if (n === 8 || n === 9) return "2 terrains";
     if (n === 10) return "3 terrains (dont 1x1)";
@@ -2845,6 +2908,251 @@ let specialMatchScores = {};
 // modification locale pas encore confirmée en base — voir applyTournamentData().
 let saveInFlight = false;
 
+// ══════════════════════════════════════════════════════════
+// 2ÈME SÉANCE (horaire décalé) — 3 TERRAINS UNIQUEMENT
+// La séance 1 est inchangée. La séance 2 démarre à 5 joueurs (programmes
+// spéciaux 5/6/7 joueurs) puis reprend les programmes normaux 8 à 16.
+// Principe : les variables globales (N, positions, matchScores, ...)
+// représentent la séance AFFICHÉE (CUR_SESSION). L'autre séance est
+// conservée dans SESS_STORE ; withSession(k, fn) permet de calculer
+// temporairement sur l'autre séance (classement cumulé, écran TV, ...).
+// ══════════════════════════════════════════════════════════
+// Notation : 'a-b x c-d' = a+b contre c+d ; 'e x f-g' (2x1) est rangé [f,g,e] :
+// la paire en premier, le joueur seul en dernier (convention déjà utilisée par l'app).
+const SESSION2_SMALL_GRIDS = {
+  // 5 joueurs : 1 terrain, 1 joueur au repos par tour
+  5: [
+    [{players:[1,2,3,4]},{rest:5}],
+    [{players:[1,4,2,5]},{rest:3}],
+    [{players:[1,5,4,3]},{rest:2}],
+    [{players:[2,3,5,4]},{rest:1}],
+    [{players:[1,3,2,5]},{rest:4}]
+  ],
+  // 6 joueurs : 2 terrains (un 2x2 + un 1x1)
+  6: [
+    [{players:[1,4,2,3]},{players:[5,6],type:'1x1'}],
+    [{players:[1,3,5,6]},{players:[2,4],type:'1x1'}],
+    [{players:[2,5,3,6]},{players:[1,4],type:'1x1'}],
+    [{players:[3,4,1,6]},{players:[5,2],type:'1x1'}],
+    [{players:[2,4,3,5]},{players:[1,6],type:'1x1'}]
+  ],
+  // 7 joueurs : 2 terrains (un 2x2 + un 2x1)
+  7: [
+    [{players:[1,2,3,4]},{players:[6,7,5],type:'2x1'}],
+    [{players:[1,6,5,7]},{players:[3,4,2],type:'2x1'}],
+    [{players:[2,4,3,7]},{players:[1,5,6],type:'2x1'}],
+    [{players:[5,6,1,4]},{players:[2,3,7],type:'2x1'}],
+    [{players:[2,7,3,5]},{players:[4,6,1],type:'2x1'}]
+  ]
+};
+const PLAYER_OPTIONS_SESSION2 = [
+  {value:5, label:"5 joueurs (1 terrain + repos)"},
+  {value:6, label:"6 joueurs (2 terrains - 2x2 + 1x1)"},
+  {value:7, label:"7 joueurs (2 terrains - 2x2 + 2x1)"}
+].concat(PLAYER_OPTIONS_BY_TERRAIN[3]);
+const LEGEND_SESSION2 = [
+  "5 joueurs : 1 terrain (2x2) + 1 joueur au repos par tour",
+  "6 joueurs : 2 terrains (un match 2x2 + un match 1x1)",
+  "7 joueurs : 2 terrains (un match 2x2 + un match 2x1)"
+].concat(LEGEND_BY_TERRAIN[3]);
+
+let CUR_SESSION = 1;            // séance affichée / éditée sur cet appareil
+let SESSION2_ENABLED = false;   // activée par l'admin (synchronisé via Firestore)
+let SESSION_TIMES = { time1: '', time2: '' };
+let NAMES_OVERRIDE = null;      // noms de l'autre séance, le temps d'un calcul (withSession)
+let RANK_VIEW = 'all';          // 'all' | '1' | '2'
+const SESS_STORE = { 1: null, 2: null };
+
+function blankSessionState(n) {
+  return { N: n, positions: [], players: {}, matchScores: {}, specialMatchScores: {}, playerReplacements: {}, replacementLog: [], generated: false };
+}
+SESS_STORE[2] = blankSessionState(5);
+
+function sessionStateFromData(d, defN) {
+  d = d || {};
+  return {
+    N: d.N || defN,
+    positions: Array.isArray(d.positions) ? d.positions : [],
+    players: d.players || {},
+    matchScores: d.matchScores || {},
+    specialMatchScores: d.specialMatchScores || {},
+    playerReplacements: d.playerReplacements || {},
+    replacementLog: d.replacementLog || [],
+    generated: !!d.generated
+  };
+}
+function session2Active() { return SESSION2_ENABLED && TERRAINS === 3; }
+function isImposedGrid() { return CUR_SESSION === 2 && TERRAINS === 3 && !!SESSION2_SMALL_GRIDS[N]; }
+function readNamesFromDOM() {
+  const o = {};
+  for (let i = 1; i <= 20; i++) { const el = document.getElementById('player' + i); if (el) o[i] = el.value; }
+  return o;
+}
+function captureCurrentSession() {
+  SESS_STORE[CUR_SESSION] = {
+    N: N, positions: positions, players: readNamesFromDOM(),
+    matchScores: matchScores, specialMatchScores: specialMatchScores,
+    playerReplacements: playerReplacements, replacementLog: replacementLog,
+    generated: tournamentGenerated
+  };
+}
+function loadStateIntoGlobals(st) {
+  N = st.N;
+  positions = Array.isArray(st.positions) ? st.positions : [];
+  matchScores = st.matchScores || {};
+  specialMatchScores = st.specialMatchScores || {};
+  playerReplacements = st.playerReplacements || {};
+  replacementLog = st.replacementLog || [];
+  tournamentGenerated = !!st.generated;
+}
+function withSession(k, fn) {
+  if (k === CUR_SESSION) return fn();
+  const saved = { N: N, positions: positions, matchScores: matchScores, specialMatchScores: specialMatchScores,
+    playerReplacements: playerReplacements, replacementLog: replacementLog, generated: tournamentGenerated,
+    cur: CUR_SESSION, names: NAMES_OVERRIDE };
+  const st = SESS_STORE[k] || blankSessionState(k === 2 ? 5 : 12);
+  loadStateIntoGlobals(st);
+  CUR_SESSION = k;
+  NAMES_OVERRIDE = st.players || {};
+  try { return fn(); }
+  finally {
+    loadStateIntoGlobals({ N: saved.N, positions: saved.positions, matchScores: saved.matchScores,
+      specialMatchScores: saved.specialMatchScores, playerReplacements: saved.playerReplacements,
+      replacementLog: saved.replacementLog, generated: saved.generated });
+    CUR_SESSION = saved.cur;
+    NAMES_OVERRIDE = saved.names;
+  }
+}
+function hasCurrentData() {
+  return tournamentGenerated || Object.keys(matchScores).length > 0 || Object.keys(specialMatchScores).length > 0;
+}
+function sessionHasData(k) { return withSession(k, hasCurrentData); }
+
+// Clé de fusion d'un joueur entre les deux séances : même nom (casse, accents et espaces ignorés) = même joueur.
+// Les noms par défaut "Joueur n" ne sont jamais fusionnés.
+function nameKeyForMerge(name, session, num) {
+  const n = String(name || '').trim().replace(/\s+/g, ' ');
+  if (/^Joueur \d+$/i.test(n)) return '#' + session + '-' + num;
+  return n.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase();
+}
+function uniqueMergeKey(registry, name, k, num) {
+  let key = nameKeyForMerge(name, k, num);
+  if (registry[key] && registry[key].sess.indexOf(k) !== -1) key = key + '#' + k + '-' + num;  // doublon dans une même séance : pas de fusion
+  return key;
+}
+function fmtSessTime(t) { return t ? ' · ' + String(t).replace(':', 'h') : ''; }
+function legendForCurrent() {
+  if (CUR_SESSION === 2 && TERRAINS === 3) return LEGEND_SESSION2;
+  return LEGEND_BY_TERRAIN[TERRAINS] || [];
+}
+
+function updateRankingTitle() {
+  const t = document.getElementById('rankingTitle');
+  if (!t) return;
+  if (!session2Active()) { t.textContent = 'Classement'; return; }
+  t.textContent = RANK_VIEW === '1' ? 'Classement — Séance 1' : RANK_VIEW === '2' ? 'Classement — Séance 2' : 'Classement général (séances 1 + 2)';
+}
+function sessTag(p) {
+  if (!session2Active() || RANK_VIEW !== 'all' || !p.sess) return '';
+  return ' <small style="opacity:.65;font-weight:600">(' + p.sess.map(function (s) { return 'S' + s; }).join('+') + ')</small>';
+}
+function setRankView(v) {
+  RANK_VIEW = v;
+  document.querySelectorAll('.rank-view-btn').forEach(function (b) { b.classList.toggle('active', b.dataset.v === v); });
+  calculateRanking();
+}
+
+function updateSessionUI() {
+  const active = session2Active();
+  if (!active) RANK_VIEW = 'all';
+  const bar = document.getElementById('sessionBar');
+  if (bar) bar.style.display = active ? 'flex' : 'none';
+  const b1 = document.getElementById('sessBtn1'), b2 = document.getElementById('sessBtn2');
+  if (b1) { b1.textContent = 'Séance 1' + fmtSessTime(SESSION_TIMES.time1); b1.classList.toggle('active', CUR_SESSION === 1); }
+  if (b2) { b2.textContent = 'Séance 2' + fmtSessTime(SESSION_TIMES.time2); b2.classList.toggle('active', CUR_SESSION === 2); }
+  const hint = document.getElementById('sessBarHint');
+  if (hint) hint.textContent = active ? ('Vous consultez la séance ' + CUR_SESSION) : '';
+  const card = document.getElementById('session2Card');
+  if (card) card.classList.toggle('s2-hidden', TERRAINS !== 3);
+  const chk = document.getElementById('session2Enabled');
+  if (chk && document.activeElement !== chk) chk.checked = SESSION2_ENABLED;
+  const t1 = document.getElementById('sessionTime1'), t2 = document.getElementById('sessionTime2');
+  if (t1 && document.activeElement !== t1) t1.value = SESSION_TIMES.time1 || '';
+  if (t2 && document.activeElement !== t2) t2.value = SESSION_TIMES.time2 || '';
+  const lbl = document.getElementById('matchesSessionLabel');
+  if (lbl) {
+    if (active) {
+      lbl.style.display = 'block';
+      lbl.textContent = 'Séance ' + CUR_SESSION + fmtSessTime(CUR_SESSION === 1 ? SESSION_TIMES.time1 : SESSION_TIMES.time2) + ' · ' + N + ' joueurs';
+    } else { lbl.style.display = 'none'; }
+  }
+  const rv = document.getElementById('rankingViewBar');
+  if (rv) {
+    rv.style.display = active ? 'flex' : 'none';
+    rv.querySelectorAll('.rank-view-btn').forEach(function (b) { b.classList.toggle('active', b.dataset.v === RANK_VIEW); });
+  }
+  updateRankingTitle();
+}
+
+function refreshRankingIfData() {
+  const cur = hasCurrentData();
+  const other = session2Active() && sessionHasData(CUR_SESSION === 1 ? 2 : 1);
+  if (cur || other) calculateRanking();
+  else { const tb = document.getElementById('rankingBody'); if (tb) tb.innerHTML = ''; }
+}
+function renderCurrentSession() {
+  if (hasCurrentData()) { generateTournament(); updateStats(); }
+  else { clearGeneratedDisplay(); }
+  refreshRankingIfData();
+  updateStatusBar();
+}
+function switchSession(k) {
+  if (k === CUR_SESSION) return;
+  if (k === 2 && !session2Active()) return;
+  captureCurrentSession();
+  CUR_SESSION = k;
+  const st = SESS_STORE[k] || blankSessionState(k === 2 ? 5 : 12);
+  loadStateIntoGlobals(st);
+  populatePlayerCountOptions(N);
+  buildPlayerInputs();
+  const names = st.players || {};
+  for (let i = 1; i <= 20; i++) { const el = document.getElementById('player' + i); if (el && names[i]) el.value = names[i]; }
+  updateActiveCount();
+  ensurePositions();
+  updateSessionUI();
+  renderCurrentSession();
+  showNotice('Séance ' + k + fmtSessTime(k === 1 ? SESSION_TIMES.time1 : SESSION_TIMES.time2));
+}
+function toggleSession2() {
+  const chk = document.getElementById('session2Enabled');
+  SESSION2_ENABLED = !!(chk && chk.checked);
+  if (SESSION2_ENABLED && TERRAINS !== 3) {
+    SESSION2_ENABLED = false; if (chk) chk.checked = false;
+    showNotice('La 2ème séance n\'existe que pour 3 terrains');
+    return;
+  }
+  if (!SESSION2_ENABLED && CUR_SESSION === 2) switchSession(1);
+  updateSessionUI();
+  refreshRankingIfData();
+  showNotice(SESSION2_ENABLED ? 'Séance 2 activée' : 'Séance 2 désactivée (données conservées)');
+  scheduleAutoSave();
+}
+function onSessionTimesChange() {
+  const t1 = document.getElementById('sessionTime1'), t2 = document.getElementById('sessionTime2');
+  SESSION_TIMES = { time1: t1 ? t1.value : '', time2: t2 ? t2.value : '' };
+  updateSessionUI();
+  scheduleAutoSave();
+}
+function resetSession2() {
+  if (!confirm('Vider complètement la séance 2 (joueurs, matchs, scores) ?')) return;
+  if (CUR_SESSION === 2) switchSession(1);
+  SESS_STORE[2] = blankSessionState(5);
+  updateSessionUI();
+  refreshRankingIfData();
+  scheduleAutoSave();
+  showNotice('Séance 2 vidée');
+}
+
 function showNotice(message) {
   const notice = document.getElementById('notice');
   if (notice) {
@@ -2858,7 +3166,7 @@ function populatePlayerCountOptions(preferredN) {
   const select = document.getElementById('playerCount');
   if (!select) return;
   
-  const options = PLAYER_OPTIONS_BY_TERRAIN[TERRAINS] || PLAYER_OPTIONS_BY_TERRAIN[5];
+  const options = (CUR_SESSION === 2 && TERRAINS === 3) ? PLAYER_OPTIONS_SESSION2 : (PLAYER_OPTIONS_BY_TERRAIN[TERRAINS] || PLAYER_OPTIONS_BY_TERRAIN[5]);
   select.innerHTML = options.map(o => `<option value="${o.value}">${o.label}</option>`).join('');
   
   const validValues = options.map(o => o.value);
@@ -2872,6 +3180,11 @@ function populatePlayerCountOptions(preferredN) {
 
 function changeTerrainCount() {
   const select = document.getElementById('terrainCount');
+  if (CUR_SESSION === 2) {
+    select.value = '3';
+    showNotice('La séance 2 fonctionne uniquement avec 3 terrains. Revenez à la séance 1 pour changer le nombre de terrains.');
+    return;
+  }
   TERRAINS = parseInt(select.value);
   
   populatePlayerCountOptions(N);
@@ -2882,6 +3195,8 @@ function changeTerrainCount() {
   
   const terrainInfo = getTerrainInfoText(TERRAINS, N);
   showNotice('Terrains disponibles : ' + TERRAINS + ' - Configuration pour ' + N + ' joueurs - ' + terrainInfo);
+  updateSessionUI();
+  refreshRankingIfData();
 }
 
 function changePlayerCount() {
@@ -2936,6 +3251,11 @@ function buildPlayerInputs() {
 }
 
 function getPlayerName(playerNumber) {
+  if (NAMES_OVERRIDE) {
+    const v = NAMES_OVERRIDE[playerNumber];
+    if (v && String(v).trim() && String(v).trim() !== 'Joueur ' + playerNumber) return String(v).trim();
+    return 'Joueur ' + playerNumber;
+  }
   const el = document.getElementById('player' + playerNumber);
   if (el && el.value.trim() && el.value.trim() !== 'Joueur ' + playerNumber) {
     return el.value.trim();
@@ -3001,6 +3321,7 @@ function shufflePositions() {
 }
 
 function getGridForN() {
+  if (CUR_SESSION === 2 && TERRAINS === 3 && SESSION2_SMALL_GRIDS[N]) return SESSION2_SMALL_GRIDS[N];
   const grids = gridsByTerrain[TERRAINS] || gridsByTerrain[5];
   if (grids[N]) return grids[N];
   const firstKey = Object.keys(grids)[0];
@@ -3082,6 +3403,8 @@ function updateReplacementLogDisplay() {
 
 // VALIDATION DES CONTRAINTES
 function validateAllConstraints() {
+  // Programmes imposés 5/6/7 joueurs (2ème séance) : les règles anti-répétition ne s'appliquent pas
+  if (isImposedGrid()) return { violations: [], warnings: [], isValid: true, imposed: true };
   const relationships = calculateDetailedRelationships();
   const players = getActivePlayerNumbers();
   const violations = [];
@@ -3151,7 +3474,9 @@ function generateValidatedTournament() {
   ensurePositions();
   const validation = validateAllConstraints();
   
-  if (!validation.isValid) {
+  if (validation.imposed) {
+    showNotice('✅ Programme spécial 2ème séance (' + N + ' joueurs) généré');
+  } else if (!validation.isValid) {
     showNotice('⚠️ Le tournoi généré ne respecte pas toutes les règles !');
   } else {
     showNotice('✅ Tournoi généré avec succès - Toutes les règles sont respectées');
@@ -3193,7 +3518,15 @@ function displayDetailedValidation(validation) {
     container.appendChild(div);
   });
   
-  if (validation.violations.length === 0 && validation.warnings.length === 0) {
+  if (validation.imposed) {
+    const info = document.createElement('div');
+    info.className = 'constraint-item success';
+    info.innerHTML = `
+      <i class="fas fa-info-circle constraint-icon" style="color:var(--primary)"></i>
+      <div class="constraint-text"><strong>Programme imposé</strong> (2ème séance, ${N} joueurs) : les règles de non-répétition des partenaires / adversaires ne sont pas applicables avec si peu de joueurs.</div>
+    `;
+    container.appendChild(info);
+  } else if (validation.violations.length === 0 && validation.warnings.length === 0) {
     const div = document.createElement('div');
     div.className = 'constraint-item success';
     div.innerHTML = `
@@ -3517,7 +3850,8 @@ function loadReplacements() {
   }
 }
 
-function calculateRanking() {
+// Statistiques de la séance courante (clé = numéro de joueur)
+function computeStatsCurrent() {
   const players = getActivePlayerNumbers();
   const stats = {};
   
@@ -3574,7 +3908,35 @@ function calculateRanking() {
     }
   }
   
-  updateRankingDisplay(stats);
+  return stats;
+}
+
+// Statistiques cumulées par joueur (même nom dans les 2 séances = même joueur).
+// onlySession : 1 ou 2 pour limiter à une seule séance.
+function buildCombinedStats(onlySession) {
+  const sessions = onlySession ? [onlySession] : (session2Active() ? [1, 2] : [1]);
+  const merged = {};
+  sessions.forEach(function (k) {
+    if (!onlySession && k === 2 && !sessionHasData(2)) return;
+    const st = withSession(k, computeStatsCurrent);
+    Object.keys(st).forEach(function (num) {
+      const s = st[num];
+      const key = uniqueMergeKey(merged, s.name, k, num);
+      if (!merged[key]) merged[key] = { name: s.name, scored: 0, conceded: 0, wins: 0, draws: 0, losses: 0, matches: 0, sess: [], colorNum: parseInt(num) };
+      const m = merged[key];
+      m.scored += s.scored; m.conceded += s.conceded; m.wins += s.wins;
+      m.draws += s.draws; m.losses += s.losses; m.matches += s.matches;
+      m.sess.push(k);
+    });
+  });
+  return merged;
+}
+
+function calculateRanking() {
+  const all = buildCombinedStats();
+  const view = session2Active() ? RANK_VIEW : 'all';
+  const shown = view === 'all' ? all : buildCombinedStats(parseInt(view));
+  updateRankingDisplay(shown, all);
 }
 
 function processMatchStats(stats, players, score1, score2) {
@@ -3652,8 +4014,10 @@ function process2v1Stats(stats, players, score1, score2) {
   }
 }
 
-function updateRankingDisplay(stats) {
-  window.lastRankingStats = stats;
+function updateRankingDisplay(stats, statsAll) {
+  // Pour l'archivage de saison : toujours le classement cumulé des séances actives
+  window.lastRankingStats = statsAll || stats;
+  updateRankingTitle();
   const ranking = Object.values(stats).map(s => ({
     ...s,
     diff: s.scored - s.conceded,
@@ -3686,7 +4050,7 @@ function updateRankingDisplay(stats) {
       
       tr.innerHTML = `
         <td>${pos}${medalIcon}</td>
-        <td style="text-align:left" class="player-color-${getPlayerNumberFromName(p.name)}">${p.name}</td>
+        <td style="text-align:left" class="player-color-${p.colorNum || getPlayerNumberFromName(p.name)}">${p.name}${sessTag(p)}</td>
         <td><strong>${p.points}</strong></td>
         <td>${p.scored}</td>
         <td>${p.conceded}</td>
@@ -4006,7 +4370,7 @@ function updateStats() {
   const relationships = calculateDetailedRelationships();
   const validation = validateAllConstraints();
   
-  const legendItems = (LEGEND_BY_TERRAIN[TERRAINS] || []).map(entry => {
+  const legendItems = legendForCurrent().map(entry => {
     const sepIdx = entry.indexOf(' : ');
     const label = sepIdx >= 0 ? entry.slice(0, sepIdx) : entry;
     const desc = sepIdx >= 0 ? entry.slice(sepIdx + 3) : '';
@@ -4125,30 +4489,43 @@ function saveData() {
     saveInFlight = false;
     return;
   }
-  
-  const players = {};
-  for (let i = 1; i <= 20; i++) {
-    const el = document.getElementById('player' + i);
-    if (el) players[i] = el.value;
-  }
+
+  // Fige l'état de la séance affichée dans SESS_STORE ; la séance 1 reste dans les
+  // champs historiques du document, la séance 2 dans "session2".
+  captureCurrentSession();
+  const s1 = SESS_STORE[1] || blankSessionState(12);
+  const s2 = SESS_STORE[2] || blankSessionState(5);
+  const players = s1.players;
 
   // Alimente la liste permanente des noms de joueurs connus (suggestion
   // automatique à la saisie dans les prochains tournois), sans bloquer la
   // sauvegarde si ça échoue.
   if (typeof fbRegisterKnownPlayerNames === 'function') {
-    fbRegisterKnownPlayerNames(Object.values(players)).catch(() => {});
+    const allNames = Object.values(players).concat(SESSION2_ENABLED ? Object.values(s2.players || {}) : []);
+    fbRegisterKnownPlayerNames(allNames).catch(() => {});
   }
   
   fbSaveTournament({
     players: players,
-    positions: positions,
+    positions: s1.positions,
     TERRAINS: TERRAINS,
-    N: N,
-    matchScores: matchScores,
-    specialMatchScores: specialMatchScores,
-    playerReplacements: playerReplacements,
-    replacementLog: replacementLog,
-    generated: tournamentGenerated
+    N: s1.N,
+    matchScores: s1.matchScores,
+    specialMatchScores: s1.specialMatchScores,
+    playerReplacements: s1.playerReplacements,
+    replacementLog: s1.replacementLog,
+    generated: s1.generated,
+    sessionMeta: { enabled: SESSION2_ENABLED, time1: SESSION_TIMES.time1 || '', time2: SESSION_TIMES.time2 || '' },
+    session2: {
+      N: s2.N,
+      positions: s2.positions,
+      players: s2.players || {},
+      matchScores: s2.matchScores,
+      specialMatchScores: s2.specialMatchScores,
+      playerReplacements: s2.playerReplacements,
+      replacementLog: s2.replacementLog,
+      generated: s2.generated
+    }
   }).then(() => {
     showNotice('Données sauvegardées');
   }).catch((e) => {
@@ -4183,47 +4560,39 @@ function applyTournamentData(data) {
   // modification qu'on venait juste de faire, qui semblait alors n'avoir
   // servi à rien (cas typique : "Importer vers joueurs" qui ne prend pas).
   if (saveInFlight) return;
-  positions = data.positions || [];
   TERRAINS = data.TERRAINS || 3;
-  matchScores = data.matchScores || {};
-  specialMatchScores = data.specialMatchScores || {};
-  playerReplacements = data.playerReplacements || {};
-  replacementLog = data.replacementLog || [];
-  tournamentGenerated = !!data.generated;
+  const meta = data.sessionMeta || {};
+  SESSION2_ENABLED = !!meta.enabled;
+  SESSION_TIMES = { time1: meta.time1 || '', time2: meta.time2 || '' };
+  SESS_STORE[1] = sessionStateFromData(data, 12);
+  SESS_STORE[2] = sessionStateFromData(data.session2, 5);
+  if (CUR_SESSION === 2 && !session2Active()) CUR_SESSION = 1;
+  loadStateIntoGlobals(SESS_STORE[CUR_SESSION]);
   
   const terrainSelect = document.getElementById('terrainCount');
   if (terrainSelect) terrainSelect.value = TERRAINS.toString();
   
-  populatePlayerCountOptions(data.N || 12);
+  populatePlayerCountOptions(N || (CUR_SESSION === 2 ? 5 : 12));
   buildPlayerInputs();
   
+  const curNames = SESS_STORE[CUR_SESSION].players || {};
   for (let i = 1; i <= 20; i++) {
     const el = document.getElementById('player' + i);
-    if (el && data.players && data.players[i]) {
-      el.value = data.players[i];
+    if (el && curNames[i]) {
+      el.value = curNames[i];
     }
   }
   
   updateActiveCount();
   ensurePositions();
+  updateSessionUI();
 
-  // Reconstruit l'affichage Matchs/Classement/Statistiques uniquement quand
-  // le tournoi a réellement été "Généré avec Validation" (drapeau explicite
-  // 'generated'), pas seulement parce que positions/terrains ont une valeur
-  // par défaut — sinon un simple changement du nombre de joueurs/terrains
-  // déclenche l'affichage automatique des matchs chez tout le monde.
-  // Le second test (scores déjà présents) reste en repli pour d'anciennes
-  // données sauvegardées avant l'ajout de ce drapeau.
-  if (data.generated || Object.keys(matchScores).length > 0 || Object.keys(specialMatchScores).length > 0) {
-    generateTournament();
-    calculateRanking();
-    updateStats();
-  } else {
-    // Aucun tournoi actif dans les données reçues (ex. réinitialisation
-    // faite sur un autre appareil) : on efface aussi l'affichage local,
-    // sinon un ancien tournoi resterait visible à l'écran indéfiniment.
-    clearGeneratedDisplay();
-  }
+  // Reconstruit l'affichage Matchs/Classement/Statistiques de la séance affichée
+  // uniquement quand elle a réellement été "Générée avec Validation" (drapeau
+  // explicite 'generated') ou contient déjà des scores (repli pour d'anciennes
+  // données) ; sinon on efface l'affichage local (ex. réinitialisation faite
+  // sur un autre appareil). Le classement cumulé tient compte des 2 séances.
+  renderCurrentSession();
   
   if (typeof ecranOpen !== 'undefined' && ecranOpen) {
     renderEcranPanels();
@@ -4278,6 +4647,13 @@ function clearGeneratedDisplay() {
 }
 
 function doReset() {
+  // Réinitialisation complète : séance 1 ET séance 2 (désactivée, vidée)
+  CUR_SESSION = 1;
+  SESSION2_ENABLED = false;
+  SESSION_TIMES = { time1: '', time2: '' };
+  SESS_STORE[1] = null;
+  SESS_STORE[2] = blankSessionState(5);
+  RANK_VIEW = 'all';
   positions = [];
   TERRAINS = 3;
   matchScores = {};
@@ -4325,7 +4701,12 @@ function doReset() {
       specialMatchScores: {},
       playerReplacements: {},
       replacementLog: [],
-      generated: false
+      generated: false,
+      sessionMeta: { enabled: false, time1: '', time2: '' },
+      session2: {
+        N: 5, positions: [], players: {}, matchScores: {}, specialMatchScores: {},
+        playerReplacements: {}, replacementLog: [], generated: false
+      }
     }).catch(e => console.error('Erreur reset Firestore:', e));
   }
   
@@ -4333,6 +4714,7 @@ function doReset() {
   btn.innerHTML = '<i class="fas fa-trash"></i> Réinitialiser';
   btn.style.background = '';
   
+  updateSessionUI();
   showNotice('Réinitialisation complète effectuée');
 }
 
@@ -4700,6 +5082,22 @@ function buildOneEcranRoundHTML(grid, r, label) {
 // suite : la page défile automatiquement (setupAllEcranAutoScroll) si le
 // contenu dépasse la hauteur de l'écran, comme dans une appli Americano.
 function buildEcranMatchesHTML() {
+  if (!session2Active()) return buildEcranSessionMatchesHTML();
+  let html = '';
+  [1, 2].forEach(function (k) {
+    const t = k === 1 ? SESSION_TIMES.time1 : SESSION_TIMES.time2;
+    html += '<div class="ecran-session-title">Séance ' + k + (t ? ' — début ' + String(t).replace(':', 'h') : '') + '</div>';
+    if (k === 2 && !sessionHasData(2)) {
+      html += '<p style="text-align:center;opacity:0.6;padding:20px">La séance 2 n\'a pas encore été générée.</p>';
+    } else {
+      html += withSession(k, buildEcranSessionMatchesHTML);
+    }
+    if (k === 1) html += '<hr style="border:none;border-top:2px solid rgba(255,255,255,0.3);margin:26px 0">';
+  });
+  return html;
+}
+
+function buildEcranSessionMatchesHTML() {
   const grid = getGridForN();
   if (!grid || grid.length === 0) {
     return '<p style="text-align:center;opacity:0.6;padding:40px">Le tournoi n\'a pas encore été généré.</p>';
@@ -4715,39 +5113,15 @@ function buildEcranMatchesHTML() {
 }
 
 function buildEcranRankingHTML() {
-  const grid = getGridForN();
-  if (!grid || grid.length === 0 || Object.keys(matchScores).length === 0) {
+  const anyScores = [1, 2].some(function (k) {
+    if (k === 2 && !session2Active()) return false;
+    return withSession(k, function () { return Object.keys(matchScores).length > 0 || Object.keys(specialMatchScores).length > 0; });
+  });
+  if (!anyScores) {
     return '<p style="text-align:center;opacity:0.6;padding:40px">Le classement apparaîtra dès la saisie des premiers scores.</p>';
   }
-  const stats = {};
-  getActivePlayerNumbers().forEach(p => {
-    stats[p] = { name: getPlayerName(p), wins: 0, draws: 0, losses: 0, scored: 0, conceded: 0 };
-  });
-  
-  for (let r = 0; r < grid.length; r++) {
-    for (let c = 0; c < grid[r].length; c++) {
-      const courtObj = grid[r][c];
-      if (courtObj.rest) continue;
-      const sc = (matchScores[r] && matchScores[r][c]) ? matchScores[r][c] : null;
-      if (!sc || sc[1] === '' || sc[2] === '' || sc[1] === undefined || sc[2] === undefined) continue;
-      
-      const originalMapped = courtObj.players.map(p => (p <= positions.length ? positions[p - 1] : null)).filter(p => p !== null);
-      const mapped = originalMapped.map(p => getReplacementPlayer(r, p));
-      let team1 = [], team2 = [];
-      if (courtObj.type === '1x1' && mapped.length === 2) { team1 = [mapped[0]]; team2 = [mapped[1]]; }
-      else if (courtObj.type === '2x1' && mapped.length === 3) { team1 = [mapped[0], mapped[1]]; team2 = [mapped[2]]; }
-      else { team1 = [mapped[0], mapped[1]]; team2 = [mapped[2], mapped[3]]; }
-      
-      const s1 = parseInt(sc[1]) || 0, s2 = parseInt(sc[2]) || 0;
-      team1.filter(Boolean).forEach(p => { if (!stats[p]) return; stats[p].scored += s1; stats[p].conceded += s2; });
-      team2.filter(Boolean).forEach(p => { if (!stats[p]) return; stats[p].scored += s2; stats[p].conceded += s1; });
-      
-      if (s1 > s2) { team1.filter(Boolean).forEach(p => stats[p] && stats[p].wins++); team2.filter(Boolean).forEach(p => stats[p] && stats[p].losses++); }
-      else if (s2 > s1) { team2.filter(Boolean).forEach(p => stats[p] && stats[p].wins++); team1.filter(Boolean).forEach(p => stats[p] && stats[p].losses++); }
-      else if (s1 === s2 && s1 > 0) { team1.concat(team2).filter(Boolean).forEach(p => stats[p] && stats[p].draws++); }
-    }
-  }
-  
+  // Classement cumulé des séances actives (tient aussi compte des matchs 1x1 / 2x1)
+  const stats = buildCombinedStats();
   const ranking = Object.values(stats).map(s => ({
     ...s, diff: s.scored - s.conceded, points: (s.wins * 3) + (s.draws * 2)
   })).sort((a, b) => {
@@ -4756,7 +5130,8 @@ function buildEcranRankingHTML() {
     return b.scored - a.scored;
   });
   
-  let html = '<table class="ecran-ranking-table"><thead><tr><th>#</th><th>Joueur</th><th>Pts</th><th>Diff</th><th>V</th></tr></thead><tbody>';
+  let html = session2Active() ? '<div class="ecran-round-title">Classement général — séances 1 + 2</div>' : '';
+  html += '<table class="ecran-ranking-table"><thead><tr><th>#</th><th>Joueur</th><th>Pts</th><th>Diff</th><th>V</th></tr></thead><tbody>';
   ranking.forEach((p, i) => {
     html += `<tr><td>${i + 1}</td><td>${p.name}</td><td>${p.points}</td><td>${p.diff > 0 ? '+' : ''}${p.diff}</td><td>${p.wins}</td></tr>`;
   });
@@ -5024,6 +5399,23 @@ function renderPlayerPickList() {
   document.getElementById('playerScreenTitle').textContent = 'Choisir un joueur';
   document.getElementById('playerScreenPrintBtn').style.display = 'none';
   const body = document.getElementById('playerScreenBody');
+
+  // Deux séances actives : un joueur présent dans les deux n'apparaît qu'une fois
+  if (session2Active()) {
+    _pickEntries = collectPlayerEntries();
+    if (!_pickEntries.length) {
+      body.innerHTML = '<p style="text-align:center;opacity:0.7;padding:30px">Aucun joueur configuré pour le moment.</p>';
+      return;
+    }
+    let h = '<div class="player-pick-grid">';
+    _pickEntries.forEach((e, i) => {
+      h += `<button class="player-pick-btn" onclick="renderPlayerHistoryEntry(${i})">${e.name}</button>`;
+    });
+    h += '</div>';
+    body.innerHTML = h;
+    return;
+  }
+
   const players = getActivePlayerNumbers();
   if (!players.length) {
     body.innerHTML = '<p style="text-align:center;opacity:0.7;padding:30px">Aucun joueur configuré pour le moment.</p>';
@@ -5037,23 +5429,32 @@ function renderPlayerPickList() {
   body.innerHTML = html;
 }
 
-// Construit et affiche la liste complète des matchs (déroulement) d'un joueur,
-// tour par tour : partenaire, adversaires, score, terrain.
-window.renderPlayerMatchHistory = function (playerId) {
+let _pickEntries = [];
+function collectPlayerEntries() {
+  const reg = {};
+  const entries = [];
+  [1, 2].forEach(function (k) {
+    if (k === 2 && (!session2Active() || !sessionHasData(2))) return;
+    withSession(k, function () {
+      getActivePlayerNumbers().forEach(function (p) {
+        const name = getPlayerName(p);
+        const key = uniqueMergeKey(reg, name, k, p);
+        if (!reg[key]) { reg[key] = { name: name, nums: {}, sess: [] }; entries.push(reg[key]); }
+        reg[key].nums[k] = p;
+        reg[key].sess.push(k);
+      });
+    });
+  });
+  return entries;
+}
+
+// Lignes de déroulement d'un joueur pour la séance courante (globales)
+function playerHistoryRows(playerId) {
   const grid = getGridForN();
-  const body = document.getElementById('playerScreenBody');
-  document.getElementById('playerScreenTitle').textContent = getPlayerName(playerId);
-  document.getElementById('playerScreenPrintBtn').style.display = '';
-
-  let html = '<button class="back-btn no-print" onclick="renderPlayerPickList()"><i class="fas fa-arrow-left"></i> Retour à la liste</button>';
-  html += `<div id="playerScreenBody_print"><h2 style="margin-bottom:10px">${getPlayerName(playerId)} — déroulement des matchs</h2>`;
-
   if (!grid || grid.length === 0) {
-    html += '<p style="opacity:0.7;padding:20px;text-align:center">Le tournoi n\'a pas encore été généré.</p></div>';
-    body.innerHTML = html;
-    return;
+    return { html: '<p style="opacity:0.7;padding:20px;text-align:center">Le tournoi n\'a pas encore été généré.</p>', found: 0 };
   }
-
+  let html = '';
   let found = 0;
   for (let r = 0; r < grid.length; r++) {
     const round = grid[r];
@@ -5096,7 +5497,42 @@ window.renderPlayerMatchHistory = function (playerId) {
       </div>`;
     }
   }
-  if (found === 0) html += '<p style="opacity:0.7;padding:20px;text-align:center">Ce joueur n\'apparaît dans aucun match du planning actuel.</p>';
+  return { html: html, found: found };
+}
+
+// Construit et affiche la liste complète des matchs (déroulement) d'un joueur,
+// tour par tour : partenaire, adversaires, score, terrain.
+window.renderPlayerMatchHistory = function (playerId) {
+  const body = document.getElementById('playerScreenBody');
+  document.getElementById('playerScreenTitle').textContent = getPlayerName(playerId);
+  document.getElementById('playerScreenPrintBtn').style.display = '';
+
+  let html = '<button class="back-btn no-print" onclick="renderPlayerPickList()"><i class="fas fa-arrow-left"></i> Retour à la liste</button>';
+  html += `<div id="playerScreenBody_print"><h2 style="margin-bottom:10px">${getPlayerName(playerId)} — déroulement des matchs</h2>`;
+
+  const res = playerHistoryRows(playerId);
+  html += res.html;
+  if (res.found === 0 && getGridForN().length > 0) html += '<p style="opacity:0.7;padding:20px;text-align:center">Ce joueur n\'apparaît dans aucun match du planning actuel.</p>';
+  html += '</div>';
+  body.innerHTML = html;
+};
+
+// Même chose quand deux séances sont actives : déroulement de la séance 1 puis de la séance 2
+window.renderPlayerHistoryEntry = function (i) {
+  const e = _pickEntries[i];
+  if (!e) return;
+  const body = document.getElementById('playerScreenBody');
+  document.getElementById('playerScreenTitle').textContent = e.name;
+  document.getElementById('playerScreenPrintBtn').style.display = '';
+
+  let html = '<button class="back-btn no-print" onclick="renderPlayerPickList()"><i class="fas fa-arrow-left"></i> Retour à la liste</button>';
+  html += `<div id="playerScreenBody_print"><h2 style="margin-bottom:10px">${e.name} — déroulement des matchs</h2>`;
+  e.sess.forEach(function (k) {
+    const t = k === 1 ? SESSION_TIMES.time1 : SESSION_TIMES.time2;
+    const res = withSession(k, function () { return playerHistoryRows(e.nums[k]); });
+    html += `<h3 style="margin:14px 0 6px;color:#6a1b9a">Séance ${k}${fmtSessTime(t)}</h3>` + res.html;
+    if (res.found === 0) html += '<p style="opacity:0.7;padding:10px;text-align:center">Aucun match dans cette séance.</p>';
+  });
   html += '</div>';
   body.innerHTML = html;
 };
@@ -5133,6 +5569,7 @@ document.addEventListener('DOMContentLoaded', function() {
     
     updateActiveCount();
     ensurePositions();
+    updateSessionUI();
     
   } catch (error) {
     console.error('Erreur lors de l\'initialisation:', error);
