@@ -2457,9 +2457,9 @@ document.addEventListener('visibilitychange', () => {
         nécessaire de le redéclarer à chaque tour. Il peut être annulé, ou un nouveau remplaçant désigné à son tour,
         à tout moment depuis l'écran des matchs.</p>
 
-        <h3><i class="fas fa-clock"></i> 6. Deux séances décalées (3 terrains)</h3>
-        <p>Lorsqu'il y a plus de 16 participants, une <strong>2ème séance</strong> est organisée en décalé horaire.
-        La séance 1 se déroule normalement. La séance 2 démarre dès 5 joueurs avec un programme adapté
+        <h3><i class="fas fa-clock"></i> 6. Deux séances décalées (3, 4 ou 5 terrains)</h3>
+        <p>Lorsqu'il y a plus de 16 participants, une <strong>2ème séance</strong> peut être organisée en décalé horaire, avec la même configuration de terrains (3, 4 ou 5) que la séance 1.
+        La séance 1 se déroule normalement. Avec 3 terrains, la séance 2 démarre dès 5 joueurs avec un programme adapté
         (5 joueurs : 1 terrain avec un joueur au repos à chaque tour ; 6 joueurs : un match 2x2 et un match 1x1 ;
         7 joueurs : un match 2x2 et un match 2x1), puis reprend les programmes habituels de 8 à 16 joueurs.
         Un joueur peut participer aux deux séances. Le <strong>classement final cumule les points des deux séances</strong>.</p>
@@ -2981,7 +2981,7 @@ function sessionStateFromData(d, defN) {
     generated: !!d.generated
   };
 }
-function session2Active() { return SESSION2_ENABLED && TERRAINS === 3; }
+function session2Active() { return SESSION2_ENABLED; }
 function isImposedGrid() { return CUR_SESSION === 2 && TERRAINS === 3 && !!SESSION2_SMALL_GRIDS[N]; }
 function readNamesFromDOM() {
   const o = {};
@@ -3023,6 +3023,34 @@ function withSession(k, fn) {
     NAMES_OVERRIDE = saved.names;
   }
 }
+// Repère, dans la liste des joueurs affichée, ceux qui figurent aussi dans l'autre séance
+function refreshCrossBadges() {
+  document.querySelectorAll('.cross-badge').forEach(function (b) { b.remove(); });
+  if (!session2Active()) return;
+  const other = CUR_SESSION === 2 ? 1 : 2;
+  const st = SESS_STORE[other];
+  if (!st) return;
+  const keys = {};
+  for (let i = 1; i <= (st.N || 0); i++) {
+    const nm = st.players && st.players[i];
+    if (!nm) continue;
+    const k = nameKeyForMerge(nm, other, i);
+    if (k.charAt(0) !== '#') keys[k] = true;
+  }
+  for (let i = 1; i <= N; i++) {
+    const el = document.getElementById('player' + i);
+    if (!el || !el.parentNode) continue;
+    const k = nameKeyForMerge(el.value, CUR_SESSION, i);
+    if (k.charAt(0) !== '#' && keys[k]) {
+      const b = document.createElement('span');
+      b.className = 'cross-badge';
+      b.style.cssText = 'margin-left:6px;padding:3px 8px;border-radius:10px;font-size:0.7rem;font-weight:700;white-space:nowrap;background:#e8f5e9;color:#2e7d32;border:1px solid #81c784';
+      b.textContent = other === 1 ? '✓ déjà en séance 1' : '✓ aussi en séance 2';
+      el.parentNode.appendChild(b);
+    }
+  }
+}
+
 function hasCurrentData() {
   return tournamentGenerated || Object.keys(matchScores).length > 0 || Object.keys(specialMatchScores).length > 0;
 }
@@ -3073,7 +3101,7 @@ function updateSessionUI() {
   const hint = document.getElementById('sessBarHint');
   if (hint) hint.textContent = active ? ('Vous consultez la séance ' + CUR_SESSION) : '';
   const card = document.getElementById('session2Card');
-  if (card) card.classList.toggle('s2-hidden', TERRAINS !== 3);
+  if (card) card.classList.remove('s2-hidden');
   const chk = document.getElementById('session2Enabled');
   if (chk && document.activeElement !== chk) chk.checked = SESSION2_ENABLED;
   const t1 = document.getElementById('sessionTime1'), t2 = document.getElementById('sessionTime2');
@@ -3092,6 +3120,7 @@ function updateSessionUI() {
     rv.querySelectorAll('.rank-view-btn').forEach(function (b) { b.classList.toggle('active', b.dataset.v === RANK_VIEW); });
   }
   updateRankingTitle();
+  refreshCrossBadges();
 }
 
 function refreshRankingIfData() {
@@ -3126,11 +3155,6 @@ function switchSession(k) {
 function toggleSession2() {
   const chk = document.getElementById('session2Enabled');
   SESSION2_ENABLED = !!(chk && chk.checked);
-  if (SESSION2_ENABLED && TERRAINS !== 3) {
-    SESSION2_ENABLED = false; if (chk) chk.checked = false;
-    showNotice('La 2ème séance n\'existe que pour 3 terrains');
-    return;
-  }
   if (!SESSION2_ENABLED && CUR_SESSION === 2) switchSession(1);
   updateSessionUI();
   refreshRankingIfData();
@@ -3181,8 +3205,8 @@ function populatePlayerCountOptions(preferredN) {
 function changeTerrainCount() {
   const select = document.getElementById('terrainCount');
   if (CUR_SESSION === 2) {
-    select.value = '3';
-    showNotice('La séance 2 fonctionne uniquement avec 3 terrains. Revenez à la séance 1 pour changer le nombre de terrains.');
+    select.value = String(TERRAINS);
+    showNotice('Le nombre de terrains est commun aux deux séances. Revenez à la séance 1 pour le modifier.');
     return;
   }
   TERRAINS = parseInt(select.value);
@@ -3236,6 +3260,9 @@ function buildPlayerInputs() {
           this.value = '';
         }
       });
+      input.addEventListener('input', function() {
+        refreshCrossBadges();
+      });
       
       input.addEventListener('blur', function() {
         if (this.value.trim() === '') {
@@ -3245,6 +3272,7 @@ function buildPlayerInputs() {
       
       input.addEventListener('input', function() {
         scheduleAutoSave();
+        refreshCrossBadges();
       });
     }
   }
@@ -4071,43 +4099,63 @@ function updateRankingDisplay(stats, statsAll) {
   updateStatusBar();
 }
 
+function statusCountsCurrent() {
+  let completed = 0, total = 0, repl = 0;
+  const grid = getGridForN();
+  for (let r = 0; r < grid.length; r++) {
+    for (let c = 0; c < grid[r].length; c++) {
+      if (grid[r][c].rest) continue;
+      total++;
+      let scores;
+      if (grid[r][c].type === '1x1' || grid[r][c].type === '2x1') {
+        scores = specialMatchScores[r] && specialMatchScores[r][c] ? specialMatchScores[r][c] : {1: 0, 2: 0};
+      } else {
+        scores = matchScores[r] && matchScores[r][c] ? matchScores[r][c] : {1: 0, 2: 0};
+      }
+      if ((scores[1] && parseInt(scores[1]) > 0) || (scores[2] && parseInt(scores[2]) > 0)) completed++;
+    }
+  }
+  Object.keys(playerReplacements).forEach(function (o) { repl += playerReplacements[o].length; });
+  return { completed: completed, total: total, repl: repl };
+}
+
 function updateStatusBar() {
   const completedMatchesElement = document.getElementById('completedMatches');
   const tournamentProgressElement = document.getElementById('tournamentProgress');
   const totalReplacementsElement = document.getElementById('totalReplacements');
-  
-  if (completedMatchesElement && tournamentProgressElement && totalReplacementsElement) {
-    let completedMatches = 0;
-    let totalMatches = 0;
-    
-    const grid = getGridForN();
-    for (let r = 0; r < grid.length; r++) {
-      for (let c = 0; c < grid[r].length; c++) {
-        if (grid[r][c].rest) continue;
-        totalMatches++;
-        
-        let scores;
-        if (grid[r][c].type === '1x1' || grid[r][c].type === '2x1') {
-          scores = specialMatchScores[r] && specialMatchScores[r][c] ? specialMatchScores[r][c] : {1: 0, 2: 0};
-        } else {
-          scores = matchScores[r] && matchScores[r][c] ? matchScores[r][c] : {1: 0, 2: 0};
-        }
-        
-        if ((scores[1] && parseInt(scores[1]) > 0) || (scores[2] && parseInt(scores[2]) > 0)) {
-          completedMatches++;
-        }
-      }
+  if (!(completedMatchesElement && tournamentProgressElement && totalReplacementsElement)) return;
+
+  let completed = 0, total = 0, repl = 0;
+  const both = session2Active();
+  (both ? [1, 2] : [1]).forEach(function (k) {
+    if (k === 2 && !sessionHasData(2)) return;
+    const x = withSession(k, statusCountsCurrent);
+    completed += x.completed; total += x.total; repl += x.repl;
+  });
+  if (!both) { const x = statusCountsCurrent(); completed = x.completed; total = x.total; repl = x.repl; }
+  completedMatchesElement.textContent = completed;
+  tournamentProgressElement.textContent = (total > 0 ? Math.round((completed / total) * 100) : 0) + '%';
+  totalReplacementsElement.textContent = repl;
+
+  // Nombre de joueurs : distincts sur les 2 séances quand elles sont actives
+  const apc = document.getElementById('activePlayersCount');
+  if (apc) {
+    if (both) {
+      const reg = {};
+      let cnt = 0;
+      [1, 2].forEach(function (k) {
+        withSession(k, function () {
+          getActivePlayerNumbers().forEach(function (pn) {
+            const key = uniqueMergeKey(reg, getPlayerName(pn), k, pn);
+            if (!reg[key]) { reg[key] = { sess: [] }; cnt++; }
+            reg[key].sess.push(k);
+          });
+        });
+      });
+      apc.textContent = cnt;
+    } else {
+      apc.textContent = N;
     }
-    
-    completedMatchesElement.textContent = completedMatches;
-    const progress = totalMatches > 0 ? Math.round((completedMatches / totalMatches) * 100) : 0;
-    tournamentProgressElement.textContent = progress + '%';
-    
-    let totalReplacements = 0;
-    Object.keys(playerReplacements).forEach(originalPlayer => {
-      totalReplacements += playerReplacements[originalPlayer].length;
-    });
-    totalReplacementsElement.textContent = totalReplacements;
   }
 }
 
