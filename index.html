@@ -3093,10 +3093,9 @@ function refreshInjuryPanel() {
   const selP = document.getElementById('injuryPlayer'), selR = document.getElementById('injuryRound');
   const prevP = selP.value, prevR = selR.value;
   let hp = '<option value="">Joueur blessé…</option>';
-  positions.forEach(function (p, idx) {
-    const slot = idx + 1;
-    if (injuries[slot] !== undefined) return;
-    hp += '<option value="' + slot + '">' + getPlayerName(p) + '</option>';
+  positions.forEach(function (p) {
+    if (injuries[p] !== undefined) return;
+    hp += '<option value="' + p + '">' + getPlayerName(p) + '</option>';
   });
   selP.innerHTML = hp;
   if (prevP) selP.value = prevP;
@@ -3110,7 +3109,7 @@ function refreshInjuryPanel() {
   const slots = Object.keys(injuries);
   list.innerHTML = slots.map(function (s) {
     return '<div style="display:flex;align-items:center;gap:8px;margin:4px 0;font-size:0.85rem"><span>🩹 <strong>' +
-      getPlayerName(positions[parseInt(s) - 1]) + '</strong> — sorti à partir du tour ' + (injFrom(injuries[s]) + 1) + (injMode(injuries[s]) === '1x1' ? ' (1x1, partenaire au repos)' : ' (2x1)') +
+      getPlayerName(parseInt(s)) + '</strong> — sorti à partir du tour ' + (injFrom(injuries[s]) + 1) + (injMode(injuries[s]) === '1x1' ? ' (1x1, partenaire au repos)' : ' (2x1)') +
       '</span><button class="btn secondary" style="margin:0;padding:4px 10px;min-height:0;font-size:0.75rem" onclick="cancelInjury(' + s + ')">Annuler</button></div>';
   }).join('');
 }
@@ -3122,14 +3121,14 @@ function afterInjuryChange() {
   scheduleAutoSave();
 }
 function declareInjury() {
-  const slot = parseInt(document.getElementById('injuryPlayer').value);
+  const slot = parseInt(document.getElementById('injuryPlayer').value);   // numéro du joueur
   const round = parseInt(document.getElementById('injuryRound').value);
   if (!slot || isNaN(round)) { showNotice('Choisissez le joueur blessé et le tour'); return; }
   if (round <= lastScoredRound() && !confirm('Des scores sont déjà saisis dans ce tour : les matchs modifiés devront être ressaisis. Continuer ?')) return;
   const mode = (document.getElementById('injuryMode') || {}).value;
   injuries[slot] = (mode === '1x1') ? { from: round, mode: '1x1' } : round;
   afterInjuryChange();
-  showNotice('🩹 ' + getPlayerName(positions[slot - 1]) + ' sort à partir du tour ' + (round + 1) + (mode === '1x1' ? ' (1x1)' : ' (2x1)'));
+  showNotice('🩹 ' + getPlayerName(slot) + ' sort à partir du tour ' + (round + 1) + (mode === '1x1' ? ' (1x1)' : ' (2x1)'));
 }
 function cancelInjury(slot) {
   delete injuries[slot];
@@ -3445,17 +3444,19 @@ function shufflePositions() {
 //  - 2x2 avec 2 blessés       -> 1x1 entre les 2 joueurs restants
 //  - 2x1 avec 1 blessé        -> 1x1 ; 1x1 avec 1 blessé -> le joueur restant est au repos
 let _injGridCache = { key: null, grid: null };
-// injuries[slot] = numéro de tour (0-based) -> mode 2x1 ; ou { from: tour, mode: '1x1' }
+// injuries[numéro de JOUEUR] = numéro de tour (0-based) -> mode 2x1 ; ou { from: tour, mode: '1x1' }
 function injFrom(v) { return (v && typeof v === 'object') ? v.from : v; }
 function injMode(v) { return (v && typeof v === 'object' && v.mode === '1x1') ? '1x1' : '2x1'; }
 function getGridForN() {
   const base = getBaseGridForN();
   const keys = Object.keys(injuries || {});
   if (!keys.length) return base;
-  const ck = CUR_SESSION + '|' + TERRAINS + '|' + N + '|' + JSON.stringify(injuries);
+  const ck = CUR_SESSION + '|' + TERRAINS + '|' + N + '|' + JSON.stringify(injuries) + '|' + JSON.stringify(positions) + '|' + JSON.stringify(playerReplacements);
   if (_injGridCache.key === ck) return _injGridCache.grid;
   const out = base.map(function (round, r) {
-    const dead = function (s) { return injuries[s] !== undefined && r >= injFrom(injuries[s]); };
+    // joueur réellement affiché sur cette place à ce tour (échanges de places inclus)
+    const who = function (s) { return (s <= positions.length) ? getReplacementPlayer(r, positions[s - 1]) : null; };
+    const dead = function (s) { const pl = who(s); return pl !== null && injuries[pl] !== undefined && r >= injFrom(injuries[pl]); };
     const courts = [], rests = [];
     round.forEach(function (co) {
       if (co.rest) { if (!dead(co.rest)) rests.push(co); return; }
@@ -3469,7 +3470,7 @@ function getGridForN() {
         if (lone1 || lone2) {
           const alone = lone1 ? a1[0] : a2[0], duo = lone1 ? a2 : a1;
           const deadSlot = (lone1 ? [pl[0], pl[1]] : [pl[2], pl[3]]).filter(dead)[0];
-          if (injMode(injuries[deadSlot]) === '1x1') {
+          if (injMode(injuries[who(deadSlot)]) === '1x1') {
             // choix 1x1 : les 2 adversaires du blessé s'affrontent, son partenaire se repose
             courts.push({ players: [duo[0], duo[1]], type: '1x1' });
             rests.push({ rest: alone });
