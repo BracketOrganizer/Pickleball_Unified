@@ -2254,6 +2254,28 @@ document.addEventListener('visibilitychange', () => {
   </div>
 
   <div id="playersTab" class="tab active">
+    <div class="card" data-role="admin" id="session2Card">
+      <span class="card-title"><i class="fas fa-clock"></i> 2ème séance (horaire décalé)</span>
+      <label style="display:flex;align-items:center;gap:8px;font-size:0.85rem;margin:8px 0;cursor:pointer">
+        <input type="checkbox" id="session2Enabled" style="width:18px;height:18px" onchange="toggleSession2()"> Activer la 2ème séance (plus de 16 inscrits)
+      </label>
+      <div class="player-row">
+        <div style="font-weight:600;min-width:130px;font-size:0.85rem;">Début séance 1 :</div>
+        <input type="time" id="sessionTime1" onchange="onSessionTimesChange()" style="padding:8px;border-radius:5px;border:2px solid #ddd;font-size:0.85rem;">
+      </div>
+      <div class="player-row">
+        <div style="font-weight:600;min-width:130px;font-size:0.85rem;">Début séance 2 :</div>
+        <input type="time" id="sessionTime2" onchange="onSessionTimesChange()" style="padding:8px;border-radius:5px;border:2px solid #ddd;font-size:0.85rem;">
+      </div>
+      <p style="font-size:0.78rem;color:#777;margin:6px 0">
+        La séance 1 reste inchangée. La séance 2 démarre à <strong>5 joueurs</strong> (programmes spéciaux 5, 6 et 7 joueurs),
+        puis reprend les programmes normaux de 8 à 16 joueurs. Un joueur peut jouer les deux séances : saisissez son nom à
+        l'identique dans les deux listes, ses points sont alors cumulés dans le classement général.
+        Basculez d'une séance à l'autre avec les boutons « Séance 1 / Séance 2 » sous les onglets.
+      </p>
+      <button class="btn" style="background:#999;margin:0" onclick="resetSession2()"><i class="fas fa-eraser"></i> Vider la séance 2</button>
+    </div>
+
     <div class="card" data-role="scorer">
       <span class="card-title"><i class="fas fa-user-friends"></i> Configuration</span>
       <div class="player-row">
@@ -2273,27 +2295,6 @@ document.addEventListener('visibilitychange', () => {
           <option value="19">19 joueurs (5 terrains - 2x1)</option>
           <option value="20">20 joueurs (5 terrains)</option>
         </select>
-      </div>
-      <label style="display:flex;align-items:center;gap:8px;font-size:0.85rem;margin:10px 0 4px;cursor:pointer">
-        <input type="checkbox" id="session2Enabled" style="width:18px;height:18px" onchange="toggleSession2()"> Activer la 2ème séance
-      </label>
-      <div id="session2Details" class="s2-hidden" style="border-top:1px solid #eee;margin-top:8px;padding-top:8px">
-        <span class="card-title"><i class="fas fa-clock"></i> 2ème séance (horaire décalé)</span>
-        <div class="player-row">
-          <div style="font-weight:600;min-width:130px;font-size:0.85rem;">Début séance 1 :</div>
-          <input type="time" id="sessionTime1" onchange="onSessionTimesChange()" style="padding:8px;border-radius:5px;border:2px solid #ddd;font-size:0.85rem;">
-        </div>
-        <div class="player-row">
-          <div style="font-weight:600;min-width:130px;font-size:0.85rem;">Début séance 2 :</div>
-          <input type="time" id="sessionTime2" onchange="onSessionTimesChange()" style="padding:8px;border-radius:5px;border:2px solid #ddd;font-size:0.85rem;">
-        </div>
-        <p style="font-size:0.78rem;color:#777;margin:6px 0">
-          La séance 1 reste inchangée. La séance 2 démarre à <strong>5 joueurs</strong> (programmes spéciaux 5, 6 et 7 joueurs),
-          puis reprend les programmes normaux de 8 à 16 joueurs. Un joueur peut jouer les deux séances : saisissez son nom à
-          l'identique dans les deux listes, ses points sont alors cumulés dans le classement général.
-          Basculez d'une séance à l'autre avec les boutons « Séance 1 / Séance 2 » sous les onglets.
-        </p>
-        <button class="btn" style="background:#999;margin:0" onclick="resetSession2()"><i class="fas fa-eraser"></i> Vider la séance 2</button>
       </div>
     </div>
 
@@ -2456,14 +2457,12 @@ document.addEventListener('visibilitychange', () => {
         nécessaire de le redéclarer à chaque tour. Il peut être annulé, ou un nouveau remplaçant désigné à son tour,
         à tout moment depuis l'écran des matchs.</p>
 
-        <div id="session2Regulation" class="s2-hidden">
-          <h3><i class="fas fa-clock"></i> 6. Deux séances décalées (3, 4 ou 5 terrains)</h3>
-          <p>Lorsqu'il y a plus de 16 participants, une <strong>2ème séance</strong> peut être organisée en décalé horaire, avec la même configuration de terrains (3, 4 ou 5) que la séance 1.
-          La séance 1 se déroule normalement. Avec 3 terrains, la séance 2 démarre dès 5 joueurs avec un programme adapté
-          (5 joueurs : 1 terrain avec un joueur au repos à chaque tour ; 6 joueurs : un match 2x2 et un match 1x1 ;
-          7 joueurs : un match 2x2 et un match 2x1), puis reprend les programmes habituels de 8 à 16 joueurs.
-          Un joueur peut participer aux deux séances. Le <strong>classement final cumule les points des deux séances</strong>.</p>
-        </div>
+        <h3><i class="fas fa-clock"></i> 6. Deux séances décalées (3 terrains)</h3>
+        <p>Lorsqu'il y a plus de 16 participants, une <strong>2ème séance</strong> est organisée en décalé horaire.
+        La séance 1 se déroule normalement. La séance 2 démarre dès 5 joueurs avec un programme adapté
+        (5 joueurs : 1 terrain avec un joueur au repos à chaque tour ; 6 joueurs : un match 2x2 et un match 1x1 ;
+        7 joueurs : un match 2x2 et un match 2x1), puis reprend les programmes habituels de 8 à 16 joueurs.
+        Un joueur peut participer aux deux séances. Le <strong>classement final cumule les points des deux séances</strong>.</p>
 
         <h3><i class="fas fa-handshake"></i> 7. Fair-play</h3>
         <p>L'auto-arbitrage est de mise : les joueurs annoncent eux-mêmes le score au fur et à mesure du match.
@@ -2982,7 +2981,7 @@ function sessionStateFromData(d, defN) {
     generated: !!d.generated
   };
 }
-function session2Active() { return SESSION2_ENABLED; }
+function session2Active() { return SESSION2_ENABLED && TERRAINS === 3; }
 function isImposedGrid() { return CUR_SESSION === 2 && TERRAINS === 3 && !!SESSION2_SMALL_GRIDS[N]; }
 function readNamesFromDOM() {
   const o = {};
@@ -3101,12 +3100,10 @@ function updateSessionUI() {
   if (b2) { b2.textContent = 'Séance 2' + fmtSessTime(SESSION_TIMES.time2); b2.classList.toggle('active', CUR_SESSION === 2); }
   const hint = document.getElementById('sessBarHint');
   if (hint) hint.textContent = active ? ('Vous consultez la séance ' + CUR_SESSION) : '';
+  const card = document.getElementById('session2Card');
+  if (card) card.classList.toggle('s2-hidden', TERRAINS !== 3);
   const chk = document.getElementById('session2Enabled');
   if (chk && document.activeElement !== chk) chk.checked = SESSION2_ENABLED;
-  const details = document.getElementById('session2Details');
-  if (details) details.classList.toggle('s2-hidden', !active);
-  const regulation = document.getElementById('session2Regulation');
-  if (regulation) regulation.classList.toggle('s2-hidden', !active);
   const t1 = document.getElementById('sessionTime1'), t2 = document.getElementById('sessionTime2');
   if (t1 && document.activeElement !== t1) t1.value = SESSION_TIMES.time1 || '';
   if (t2 && document.activeElement !== t2) t2.value = SESSION_TIMES.time2 || '';
@@ -3158,6 +3155,11 @@ function switchSession(k) {
 function toggleSession2() {
   const chk = document.getElementById('session2Enabled');
   SESSION2_ENABLED = !!(chk && chk.checked);
+  if (SESSION2_ENABLED && TERRAINS !== 3) {
+    SESSION2_ENABLED = false; if (chk) chk.checked = false;
+    showNotice('La 2ème séance n\'existe que pour 3 terrains');
+    return;
+  }
   if (!SESSION2_ENABLED && CUR_SESSION === 2) switchSession(1);
   updateSessionUI();
   refreshRankingIfData();
@@ -3208,8 +3210,8 @@ function populatePlayerCountOptions(preferredN) {
 function changeTerrainCount() {
   const select = document.getElementById('terrainCount');
   if (CUR_SESSION === 2) {
-    select.value = String(TERRAINS);
-    showNotice('Le nombre de terrains est commun aux deux séances. Revenez à la séance 1 pour le modifier.');
+    select.value = '3';
+    showNotice('La séance 2 fonctionne uniquement avec 3 terrains. Revenez à la séance 1 pour changer le nombre de terrains.');
     return;
   }
   TERRAINS = parseInt(select.value);
@@ -3262,9 +3264,6 @@ function buildPlayerInputs() {
         if (this.value === 'Joueur ' + i) {
           this.value = '';
         }
-      });
-      input.addEventListener('input', function() {
-        refreshCrossBadges();
       });
       
       input.addEventListener('blur', function() {
