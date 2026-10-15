@@ -1381,19 +1381,31 @@ window.saveEditSeasonSession = async function (terrains, index) {
 window.openMergePlayerNamesModal = async function () {
   if (!isAdmin()) return;
   let names = new Set(knownPlayerNames || []);
+  const archiveNames = new Set();
   try {
     for (const t of [3, 4, 5]) {
       const snap = await getDoc(doc(db, 'seasonArchive', 'terrain_' + t));
       const sessions = snap.exists() && Array.isArray(snap.data().sessions) ? snap.data().sessions : [];
-      sessions.forEach(sess => (sess.entries || []).forEach(e => { if (e.name) names.add(e.name); }));
+      sessions.forEach(sess => (sess.entries || []).forEach(e => { if (e.name) { names.add(e.name); archiveNames.add(e.name); } }));
     }
   } catch (e) { /* on continue avec ce qu'on a (knownPlayerNames) */ }
-  const sorted = [...names].sort((a, b) => a.localeCompare(b, 'fr'));
+  const allSorted = [...names].sort((a, b) => a.localeCompare(b, 'fr'));
+  // Fragments de noms (ex. "J", "Jea" enregistrés pendant la frappe) : jamais archivés, et
+  // soit trop courts, soit simple début d'un autre nom connu. Masqués par défaut.
+  const isFragment = n => !archiveNames.has(n) && (
+    n.trim().length < 2 ||
+    allSorted.some(m => m !== n && m.length > n.length && m.toLowerCase().startsWith(n.trim().toLowerCase()))
+  );
+  const cleanSorted = allSorted.filter(n => !isFragment(n));
+  const hiddenCount = allSorted.length - cleanSorted.length;
+  const sorted = cleanSorted.length >= 2 ? cleanSorted : allSorted;
   if (sorted.length < 2) {
     alert('Pas assez de noms différents pour proposer une fusion.');
     return;
   }
-  const optionsHtml = sorted.map(n => `<option value="${n.replace(/"/g, '&quot;')}">${n}</option>`).join('');
+  window._mergeNameLists = { clean: sorted, all: allSorted };
+  const mkOptions = list => list.map(n => `<option value="${n.replace(/"/g, '&quot;')}">${n}</option>`).join('');
+  const optionsHtml = mkOptions(sorted);
   const overlay = document.createElement('div');
   overlay.className = 'modal-overlay';
   overlay.id = 'mergePlayerNamesModal';
@@ -1413,12 +1425,20 @@ window.openMergePlayerNamesModal = async function () {
         <label style="font-size:0.8rem;font-weight:600">Nom correct à conserver</label><br>
         <select id="mergeToName" style="width:100%;padding:6px;margin-top:4px">${optionsHtml}</select>
       </div>
+      ${hiddenCount > 0 && sorted !== allSorted ? `<label style="display:flex;align-items:center;gap:6px;font-size:0.78rem;color:#777;margin-top:4px;cursor:pointer"><input type="checkbox" onchange="toggleMergeFragments(this.checked)"> Afficher aussi les ${hiddenCount} noms incomplets</label>` : ''}
       <div style="display:flex;gap:8px;margin-top:14px">
         <button class="btn secondary" style="flex:1;margin:0" onclick="closeMergePlayerNamesModal()">Annuler</button>
         <button class="btn success" style="flex:1;margin:0" onclick="confirmMergePlayerNames()">Fusionner</button>
       </div>
     </div>`;
   document.body.appendChild(overlay);
+};
+
+window.toggleMergeFragments = function (showAll) {
+  const lists = window._mergeNameLists; if (!lists) return;
+  const list = showAll ? lists.all : lists.clean;
+  const html = list.map(n => `<option value="${n.replace(/"/g, '&quot;')}">${n}</option>`).join('');
+  ['mergeFromName', 'mergeToName'].forEach(id => { const el = document.getElementById(id); if (el) el.innerHTML = html; });
 };
 
 window.closeMergePlayerNamesModal = function () {
@@ -3362,6 +3382,12 @@ function buildPlayerInputs() {
         scheduleAutoSave();
         refreshCrossBadges();
       });
+      // Nom validé (sortie du champ / choix dans la liste) : on peut l'enregistrer comme nom connu
+      input.addEventListener('change', function() {
+        if (typeof fbRegisterKnownPlayerNames === 'function') {
+          fbRegisterKnownPlayerNames([input.value]).catch(() => {});
+        }
+      });
     }
   }
 }
@@ -4698,7 +4724,12 @@ function saveData() {
   // automatique à la saisie dans les prochains tournois), sans bloquer la
   // sauvegarde si ça échoue.
   if (typeof fbRegisterKnownPlayerNames === 'function') {
-    const allNames = Object.values(players).concat(SESSION2_ENABLED ? Object.values(s2.players || {}) : []);
+    // On n'enregistre pas la valeur du champ en cours de saisie (nom incomplet) : elle sera
+    // enregistrée à la validation du champ (événement 'change'), une fois le nom complet.
+    const ae = document.activeElement;
+    const typing = (ae && /^player\d+$/.test(ae.id)) ? ae.value : null;
+    const allNames = Object.values(players).concat(SESSION2_ENABLED ? Object.values(s2.players || {}) : [])
+      .filter(function (n) { return typing === null || n !== typing; });
     fbRegisterKnownPlayerNames(allNames).catch(() => {});
   }
   
