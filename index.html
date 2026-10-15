@@ -1911,7 +1911,8 @@ window.fbSaveTournament = async function (payload) {
       specialMatchScores: payload.specialMatchScores,
       playerReplacements: payload.playerReplacements,
       replacementLog: payload.replacementLog,
-      generated: payload.generated
+      generated: payload.generated,
+      injuries: payload.injuries || {}
     };
     // 2ème séance : le scorer ne met à jour que les scores / remplacements / drapeau "généré"
     // de la séance 2 (chemins pointés, pour ne pas écraser sa configuration).
@@ -1921,6 +1922,7 @@ window.fbSaveTournament = async function (payload) {
       upd['session2.playerReplacements'] = payload.session2.playerReplacements;
       upd['session2.replacementLog'] = payload.session2.replacementLog;
       upd['session2.generated'] = payload.session2.generated;
+      upd['session2.injuries'] = payload.session2.injuries || {};
     }
     await updateDoc(ref, Object.assign(upd, meta));
   }
@@ -2343,6 +2345,16 @@ document.addEventListener('visibilitychange', () => {
       <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:6px">
         <span class="card-title"><i class="fas fa-calendar-alt"></i> Planning des Matchs</span>
         <button class="btn secondary no-print" style="margin:0" onclick="printSection('matchesCard')"><i class="fas fa-print"></i> Imprimer</button>
+      </div>
+      <div id="injuryPanel" class="no-print s2-hidden" data-role="scorer" style="background:#fff3e0;border:1px solid #ffb74d;border-radius:8px;padding:10px;margin:8px 0">
+        <div style="font-weight:700;color:#e65100;font-size:0.9rem"><i class="fas fa-user-injured"></i> Joueur blessé en cours de tournoi</div>
+        <div style="display:flex;gap:6px;flex-wrap:wrap;margin:8px 0;align-items:center">
+          <select id="injuryPlayer" style="padding:8px;border-radius:5px;border:2px solid #ddd;font-size:0.85rem"></select>
+          <select id="injuryRound" style="padding:8px;border-radius:5px;border:2px solid #ddd;font-size:0.85rem"></select>
+          <button class="btn" style="margin:0;background:#e65100" onclick="declareInjury()"><i class="fas fa-plus"></i> Déclarer</button>
+        </div>
+        <div id="injuryList"></div>
+        <p style="font-size:0.75rem;color:#777;margin:6px 0 0">Dès le tour choisi, le joueur ne joue plus : son match 2x2 devient un 2x1 (ou un 1x1 si deux joueurs sont sortis du même match). Les tours déjà joués ne changent pas.</p>
       </div>
       <div id="matchesSessionLabel" style="display:none;text-align:center;font-weight:700;color:#6a1b9a;background:#f3e5f5;border-radius:6px;padding:6px;margin:6px 0;font-size:0.85rem"></div>
       <div id="matchesDisplay">
@@ -2956,6 +2968,7 @@ const LEGEND_SESSION2 = [
   "7 joueurs : 2 terrains (un match 2x2 + un match 2x1)"
 ].concat(LEGEND_BY_TERRAIN[3]);
 
+let injuries = {};              // blessés : { numéro de position : tour (0-based) à partir duquel il ne joue plus }
 let CUR_SESSION = 1;            // séance affichée / éditée sur cet appareil
 let SESSION2_ENABLED = false;   // activée par l'admin (synchronisé via Firestore)
 let SESSION_TIMES = { time1: '', time2: '' };
@@ -2964,7 +2977,7 @@ let RANK_VIEW = 'all';          // 'all' | '1' | '2'
 const SESS_STORE = { 1: null, 2: null };
 
 function blankSessionState(n) {
-  return { N: n, positions: [], players: {}, matchScores: {}, specialMatchScores: {}, playerReplacements: {}, replacementLog: [], generated: false };
+  return { N: n, positions: [], players: {}, matchScores: {}, specialMatchScores: {}, playerReplacements: {}, replacementLog: [], generated: false, injuries: {} };
 }
 SESS_STORE[2] = blankSessionState(5);
 
@@ -2978,7 +2991,8 @@ function sessionStateFromData(d, defN) {
     specialMatchScores: d.specialMatchScores || {},
     playerReplacements: d.playerReplacements || {},
     replacementLog: d.replacementLog || [],
-    generated: !!d.generated
+    generated: !!d.generated,
+    injuries: d.injuries || {}
   };
 }
 function session2Active() { return SESSION2_ENABLED && TERRAINS === 3; }
@@ -2993,10 +3007,11 @@ function captureCurrentSession() {
     N: N, positions: positions, players: readNamesFromDOM(),
     matchScores: matchScores, specialMatchScores: specialMatchScores,
     playerReplacements: playerReplacements, replacementLog: replacementLog,
-    generated: tournamentGenerated
+    generated: tournamentGenerated, injuries: injuries
   };
 }
 function loadStateIntoGlobals(st) {
+  injuries = st.injuries || {};
   N = st.N;
   positions = Array.isArray(st.positions) ? st.positions : [];
   matchScores = st.matchScores || {};
@@ -3009,7 +3024,7 @@ function withSession(k, fn) {
   if (k === CUR_SESSION) return fn();
   const saved = { N: N, positions: positions, matchScores: matchScores, specialMatchScores: specialMatchScores,
     playerReplacements: playerReplacements, replacementLog: replacementLog, generated: tournamentGenerated,
-    cur: CUR_SESSION, names: NAMES_OVERRIDE };
+    injuries: injuries, cur: CUR_SESSION, names: NAMES_OVERRIDE };
   const st = SESS_STORE[k] || blankSessionState(k === 2 ? 5 : 12);
   loadStateIntoGlobals(st);
   CUR_SESSION = k;
@@ -3018,7 +3033,7 @@ function withSession(k, fn) {
   finally {
     loadStateIntoGlobals({ N: saved.N, positions: saved.positions, matchScores: saved.matchScores,
       specialMatchScores: saved.specialMatchScores, playerReplacements: saved.playerReplacements,
-      replacementLog: saved.replacementLog, generated: saved.generated });
+      replacementLog: saved.replacementLog, generated: saved.generated, injuries: saved.injuries });
     CUR_SESSION = saved.cur;
     NAMES_OVERRIDE = saved.names;
   }
@@ -3049,6 +3064,69 @@ function refreshCrossBadges() {
       el.parentNode.appendChild(b);
     }
   }
+}
+
+// ───────────── Blessés en cours de tournoi ─────────────
+function lastScoredRound() {
+  let last = -1;
+  const has = function (s) { return s && ((parseInt(s[1]) > 0) || (parseInt(s[2]) > 0)); };
+  [matchScores, specialMatchScores].forEach(function (store) {
+    Object.keys(store || {}).forEach(function (r) {
+      const courts = store[r] || {};
+      if (Object.keys(courts).some(function (c) { return has(courts[c]); })) last = Math.max(last, parseInt(r));
+    });
+  });
+  return last;
+}
+function refreshInjuryPanel() {
+  const panel = document.getElementById('injuryPanel');
+  if (!panel) return;
+  panel.classList.toggle('s2-hidden', !tournamentGenerated);
+  if (!tournamentGenerated) return;
+  const selP = document.getElementById('injuryPlayer'), selR = document.getElementById('injuryRound');
+  const prevP = selP.value, prevR = selR.value;
+  let hp = '<option value="">Joueur blessé…</option>';
+  positions.forEach(function (p, idx) {
+    const slot = idx + 1;
+    if (injuries[slot] !== undefined) return;
+    hp += '<option value="' + slot + '">' + getPlayerName(p) + '</option>';
+  });
+  selP.innerHTML = hp;
+  if (prevP) selP.value = prevP;
+  const total = getBaseGridForN().length;
+  const first = Math.max(0, lastScoredRound());
+  let hr = '';
+  for (let r = first; r < total; r++) hr += '<option value="' + r + '">À partir du tour ' + (r + 1) + '</option>';
+  selR.innerHTML = hr;
+  if (prevR && selR.querySelector('option[value="' + prevR + '"]')) selR.value = prevR;
+  const list = document.getElementById('injuryList');
+  const slots = Object.keys(injuries);
+  list.innerHTML = slots.map(function (s) {
+    return '<div style="display:flex;align-items:center;gap:8px;margin:4px 0;font-size:0.85rem"><span>🩹 <strong>' +
+      getPlayerName(positions[parseInt(s) - 1]) + '</strong> — sorti à partir du tour ' + (injuries[s] + 1) +
+      '</span><button class="btn secondary" style="margin:0;padding:4px 10px;min-height:0;font-size:0.75rem" onclick="cancelInjury(' + s + ')">Annuler</button></div>';
+  }).join('');
+}
+function afterInjuryChange() {
+  generateTournament();
+  calculateRanking();
+  updateStats();
+  refreshInjuryPanel();
+  scheduleAutoSave();
+}
+function declareInjury() {
+  const slot = parseInt(document.getElementById('injuryPlayer').value);
+  const round = parseInt(document.getElementById('injuryRound').value);
+  if (!slot || isNaN(round)) { showNotice('Choisissez le joueur blessé et le tour'); return; }
+  if (round <= lastScoredRound() && !confirm('Des scores sont déjà saisis dans ce tour : les matchs modifiés devront être ressaisis. Continuer ?')) return;
+  injuries[slot] = round;
+  afterInjuryChange();
+  showNotice('🩹 ' + getPlayerName(positions[slot - 1]) + ' sort à partir du tour ' + (round + 1));
+}
+function cancelInjury(slot) {
+  delete injuries[slot];
+  afterInjuryChange();
+  showNotice('Blessure annulée');
 }
 
 function hasCurrentData() {
@@ -3231,6 +3309,7 @@ function changeTerrainCount() {
 function changePlayerCount() {
   const select = document.getElementById('playerCount');
   N = parseInt(select.value);
+  injuries = {};
   updateActiveCount();
   ensurePositions();
   buildPlayerInputs();
@@ -3313,6 +3392,7 @@ function updateActiveCount() {
 
 function ensurePositions() {
   if (!positions || positions.length !== N) {
+    injuries = {};
     positions = [];
     for (let i = 1; i <= N; i++) positions.push(i);
   }
@@ -3340,6 +3420,7 @@ function shufflePositions() {
     ensurePositions();
   }
   
+  injuries = {};
   for (let i = positions.length - 1; i > 0; i--) {
     const j = Math.floor(Math.random() * (i + 1));
     [positions[i], positions[j]] = [positions[j], positions[i]];
@@ -3350,7 +3431,47 @@ function shufflePositions() {
   showNotice('Tirage mélangé avec succès');
 }
 
+// Grille effective = grille du programme, adaptée aux joueurs blessés :
+// à partir du tour déclaré, le joueur sorti ne joue plus.
+//  - match 2x2 avec 1 blessé  -> 2x1 (le coéquipier du blessé joue seul contre les 2 adversaires)
+//  - 2x2 avec 2 blessés       -> 1x1 entre les 2 joueurs restants
+//  - 2x1 avec 1 blessé        -> 1x1 ; 1x1 avec 1 blessé -> le joueur restant est au repos
+let _injGridCache = { key: null, grid: null };
 function getGridForN() {
+  const base = getBaseGridForN();
+  const keys = Object.keys(injuries || {});
+  if (!keys.length) return base;
+  const ck = CUR_SESSION + '|' + TERRAINS + '|' + N + '|' + JSON.stringify(injuries);
+  if (_injGridCache.key === ck) return _injGridCache.grid;
+  const out = base.map(function (round, r) {
+    const dead = function (s) { return injuries[s] !== undefined && r >= injuries[s]; };
+    const courts = [], rests = [];
+    round.forEach(function (co) {
+      if (co.rest) { if (!dead(co.rest)) rests.push(co); return; }
+      const pl = co.players;
+      const alive = pl.filter(function (s) { return !dead(s); });
+      if (alive.length === pl.length) { courts.push(co); return; }
+      if (pl.length === 4) {
+        const a1 = [pl[0], pl[1]].filter(function (s) { return !dead(s); });
+        const a2 = [pl[2], pl[3]].filter(function (s) { return !dead(s); });
+        if (a1.length === 1 && a2.length === 2) courts.push({ players: [a2[0], a2[1], a1[0]], type: '2x1' });
+        else if (a2.length === 1 && a1.length === 2) courts.push({ players: [a1[0], a1[1], a2[0]], type: '2x1' });
+        else if (alive.length === 2) courts.push({ players: alive, type: '1x1' });
+        else if (alive.length === 1) rests.push({ rest: alive[0] });
+      } else if (pl.length === 3) {
+        if (alive.length === 2) courts.push({ players: alive, type: '1x1' });
+        else if (alive.length === 1) rests.push({ rest: alive[0] });
+      } else if (pl.length === 2) {
+        if (alive.length === 1) rests.push({ rest: alive[0] });
+      }
+    });
+    return courts.concat(rests);
+  });
+  _injGridCache = { key: ck, grid: out };
+  return out;
+}
+
+function getBaseGridForN() {
   if (CUR_SESSION === 2 && TERRAINS === 3 && SESSION2_SMALL_GRIDS[N]) return SESSION2_SMALL_GRIDS[N];
   const grids = gridsByTerrain[TERRAINS] || gridsByTerrain[5];
   if (grids[N]) return grids[N];
@@ -3620,6 +3741,7 @@ function getOpponentsInRound(playerId, round) {
 }
 
 function generateTournament() {
+  setTimeout(refreshInjuryPanel, 0);
   ensurePositions();
   const grid = getGridForN();
   const container = document.getElementById('matchesDisplay');
@@ -4565,6 +4687,7 @@ function saveData() {
     playerReplacements: s1.playerReplacements,
     replacementLog: s1.replacementLog,
     generated: s1.generated,
+    injuries: s1.injuries || {},
     sessionMeta: { enabled: SESSION2_ENABLED, time1: SESSION_TIMES.time1 || '', time2: SESSION_TIMES.time2 || '' },
     session2: {
       N: s2.N,
@@ -4574,7 +4697,8 @@ function saveData() {
       specialMatchScores: s2.specialMatchScores,
       playerReplacements: s2.playerReplacements,
       replacementLog: s2.replacementLog,
-      generated: s2.generated
+      generated: s2.generated,
+      injuries: s2.injuries || {}
     }
   }).then(() => {
     showNotice('Données sauvegardées');
@@ -4671,6 +4795,7 @@ function resetAll() {
 // ça, un appareil qui affichait déjà un tournoi garde l'ancien affichage
 // à l'écran indéfiniment après une réinitialisation distante.
 function clearGeneratedDisplay() {
+  setTimeout(refreshInjuryPanel, 0);
   // 'positionsList' n'est PAS inclus ici : le tirage des positions
   // (bouton "Mélanger") est valide dès qu'il existe, indépendamment du
   // fait que le tournoi ait été "Généré avec Validation" ou non. Le
@@ -4704,6 +4829,7 @@ function doReset() {
   SESS_STORE[1] = null;
   SESS_STORE[2] = blankSessionState(5);
   RANK_VIEW = 'all';
+  injuries = {};
   positions = [];
   TERRAINS = 3;
   matchScores = {};
@@ -4752,10 +4878,11 @@ function doReset() {
       playerReplacements: {},
       replacementLog: [],
       generated: false,
+      injuries: {},
       sessionMeta: { enabled: false, time1: '', time2: '' },
       session2: {
         N: 5, positions: [], players: {}, matchScores: {}, specialMatchScores: {},
-        playerReplacements: {}, replacementLog: [], generated: false
+        playerReplacements: {}, replacementLog: [], generated: false, injuries: {}
       }
     }).catch(e => console.error('Erreur reset Firestore:', e));
   }
