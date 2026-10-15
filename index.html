@@ -3818,6 +3818,9 @@ function generateTournament() {
         courtDiv.className = courtObj.type ? 'match special-match' : 'match';
         
         const activePlayers = getActivePlayerNumbers();
+        // Option pour remettre le joueur prévu par le programme à cette place (si un échange a été fait)
+        const restoreOpt = (i) => (originalMapped[i] !== undefined && originalMapped[i] !== mapped[i])
+          ? `<option value="__orig">↺ Remettre ${getPlayerName(originalMapped[i])}</option>` : '';
         const playerOptions = activePlayers.map(p => 
           `<option value="${p}">${getPlayerName(p)}</option>`
         ).join('');
@@ -3832,7 +3835,7 @@ function generateTournament() {
             <div class="team-row" style="justify-content:center">
               <select class="replacement-select" data-round="${r}" data-court="${courtIndex}" data-position="0" 
                       onchange="updatePlayerReplacement(${r}, ${courtIndex}, 0, this.value)">
-                <option value="">${getPlayerName(mapped[0])}</option>
+                <option value="">${getPlayerName(mapped[0])}</option>${restoreOpt(0)}
                 ${playerOptions}
               </select>
               <input type="number" class="score-input" data-round="${r}" data-court="${courtIndex}" data-side="1" min="0" value="${currentScores[1] || ''}" placeholder="Score">
@@ -3842,7 +3845,7 @@ function generateTournament() {
               <input type="number" class="score-input" data-round="${r}" data-court="${courtIndex}" data-side="2" min="0" value="${currentScores[2] || ''}" placeholder="Score">
               <select class="replacement-select" data-round="${r}" data-court="${courtIndex}" data-position="1" 
                       onchange="updatePlayerReplacement(${r}, ${courtIndex}, 1, this.value)">
-                <option value="">${getPlayerName(mapped[1])}</option>
+                <option value="">${getPlayerName(mapped[1])}</option>${restoreOpt(1)}
                 ${playerOptions}
               </select>
             </div>
@@ -3854,13 +3857,13 @@ function generateTournament() {
             <div class="team-row" style="justify-content:center">
               <select class="replacement-select" data-round="${r}" data-court="${courtIndex}" data-position="0" 
                       onchange="updatePlayerReplacement(${r}, ${courtIndex}, 0, this.value)">
-                <option value="">${getPlayerName(mapped[0])}</option>
+                <option value="">${getPlayerName(mapped[0])}</option>${restoreOpt(0)}
                 ${playerOptions}
               </select>
               <span style="margin:0 3px;font-size:0.8rem">+</span>
               <select class="replacement-select" data-round="${r}" data-court="${courtIndex}" data-position="1" 
                       onchange="updatePlayerReplacement(${r}, ${courtIndex}, 1, this.value)">
-                <option value="">${getPlayerName(mapped[1])}</option>
+                <option value="">${getPlayerName(mapped[1])}</option>${restoreOpt(1)}
                 ${playerOptions}
               </select>
               <input type="number" class="score-input" data-round="${r}" data-court="${courtIndex}" data-side="1" min="0" value="${currentScores[1] || ''}" placeholder="Score">
@@ -3870,7 +3873,7 @@ function generateTournament() {
               <input type="number" class="score-input" data-round="${r}" data-court="${courtIndex}" data-side="2" min="0" value="${currentScores[2] || ''}" placeholder="Score">
               <select class="replacement-select" data-round="${r}" data-court="${courtIndex}" data-position="2" 
                       onchange="updatePlayerReplacement(${r}, ${courtIndex}, 2, this.value)">
-                <option value="">${getPlayerName(mapped[2])}</option>
+                <option value="">${getPlayerName(mapped[2])}</option>${restoreOpt(2)}
                 ${playerOptions}
               </select>
             </div>
@@ -3883,13 +3886,13 @@ function generateTournament() {
               <div>
                 <select class="replacement-select" data-round="${r}" data-court="${courtIndex}" data-position="0" 
                         onchange="updatePlayerReplacement(${r}, ${courtIndex}, 0, this.value)">
-                  <option value="">${getPlayerName(mapped[0])}</option>
+                  <option value="">${getPlayerName(mapped[0])}</option>${restoreOpt(0)}
                   ${playerOptions}
                 </select>
                 <span style="margin:0 3px;font-size:0.8rem">+</span>
                 <select class="replacement-select" data-round="${r}" data-court="${courtIndex}" data-position="1" 
                         onchange="updatePlayerReplacement(${r}, ${courtIndex}, 1, this.value)">
-                  <option value="">${getPlayerName(mapped[1])}</option>
+                  <option value="">${getPlayerName(mapped[1])}</option>${restoreOpt(1)}
                   ${playerOptions}
                 </select>
               </div>
@@ -3901,13 +3904,13 @@ function generateTournament() {
               <div>
                 <select class="replacement-select" data-round="${r}" data-court="${courtIndex}" data-position="2" 
                         onchange="updatePlayerReplacement(${r}, ${courtIndex}, 2, this.value)">
-                  <option value="">${getPlayerName(mapped[2])}</option>
+                  <option value="">${getPlayerName(mapped[2])}</option>${restoreOpt(2)}
                   ${playerOptions}
                 </select>
                 <span style="margin:0 3px;font-size:0.8rem">+</span>
                 <select class="replacement-select" data-round="${r}" data-court="${courtIndex}" data-position="3" 
                         onchange="updatePlayerReplacement(${r}, ${courtIndex}, 3, this.value)">
-                  <option value="">${getPlayerName(mapped[3])}</option>
+                  <option value="">${getPlayerName(mapped[3])}</option>${restoreOpt(3)}
                   ${playerOptions}
                 </select>
               </div>
@@ -4920,65 +4923,41 @@ function findOriginalSlotOccupiedBy(round, targetPlayer) {
   return null;
 }
 
+// Changer le nom d'une place = ÉCHANGER deux places pour CE tour uniquement :
+// le joueur choisi vient à cette place, et le joueur qui s'y trouvait prend la
+// place que le joueur choisi occupait (terrain ou repos). On ne touche qu'à ces
+// deux places : les échanges déjà faits sur les autres places restent intacts
+// (l'ancienne version défaisait des échanges précédents et pouvait faire
+// réapparaître le nom de départ ou créer des doublons).
 function updatePlayerReplacement(round, court, position, newPlayerId) {
   const grid = getGridForN();
-  
-  if (grid[round] && grid[round][court]) {
-    const originalMapped = grid[round][court].players.map(p => positions[p - 1]);
-    const oldPlayer = originalMapped[position];
-    
-    if (!playerReplacements[oldPlayer]) {
-      playerReplacements[oldPlayer] = [];
-    }
-    
-    // On retire toute déclaration existante précisément à ce tour (on la remplace ou l'annule)
-    playerReplacements[oldPlayer] = playerReplacements[oldPlayer].filter(e => e.fromRound !== round);
+  if (!(grid[round] && grid[round][court])) return;
 
-    // Un remplacement déclenche TOUJOURS un échange de place (voir plus
-    // bas), ce qui crée une déclaration miroir chez le joueur qui prend la
-    // place laissée libre. Si on annule ou remplace la déclaration faite
-    // ici, il faut retirer aussi cette déclaration miroir à ce même tour —
-    // sinon l'ancien remplaçant ET oldPlayer se retrouveraient tous les
-    // deux sur cette place laissée libre.
-    Object.keys(playerReplacements).forEach(origKey => {
-      const origId = parseInt(origKey);
-      if (origId === oldPlayer) return;
-      playerReplacements[origId] = playerReplacements[origId].filter(e => !(e.fromRound === round && e.substitute === oldPlayer));
-      if (playerReplacements[origId].length === 0) delete playerReplacements[origId];
-    });
-    
-    if (newPlayerId === '') {
-      // Annulation pour ce tour uniquement (déjà retirée par le filtre
-      // ci-dessus) : les autres tours ne sont pas concernés.
-      if (playerReplacements[oldPlayer].length === 0) {
-        delete playerReplacements[oldPlayer];
-      }
-    } else {
-      const newId = parseInt(newPlayerId);
-      // Place actuellement occupée par newId à ce tour (un autre terrain, ou
-      // le repos) : c'est là qu'oldPlayer va être installé en échange, pour
-      // ce tour uniquement.
-      const freedSlotOwner = findOriginalSlotOccupiedBy(round, newId);
+  const oldOwner = grid[round][court].players.map(p => positions[p - 1])[position];   // propriétaire d'origine de la place
+  const shown = getReplacementPlayer(round, oldOwner);                              // joueur actuellement affiché
+  if (newPlayerId === '' || newPlayerId === undefined) return;                       // même nom re-sélectionné : rien à faire
+  const q = (newPlayerId === '__orig') ? oldOwner : parseInt(newPlayerId);
+  if (isNaN(q) || q === shown) return;
 
-      playerReplacements[oldPlayer].push({ substitute: newId, fromRound: round });
-      playerReplacements[oldPlayer].sort((a, b) => a.fromRound - b.fromRound);
+  // Place actuellement occupée par q à ce tour (avant toute modification)
+  const otherOwner = findOriginalSlotOccupiedBy(round, q);
 
-      if (freedSlotOwner !== null && freedSlotOwner !== oldPlayer) {
-        if (!playerReplacements[freedSlotOwner]) playerReplacements[freedSlotOwner] = [];
-        playerReplacements[freedSlotOwner] = playerReplacements[freedSlotOwner].filter(e => e.fromRound !== round);
-        playerReplacements[freedSlotOwner].push({ substitute: oldPlayer, fromRound: round });
-        playerReplacements[freedSlotOwner].sort((a, b) => a.fromRound - b.fromRound);
-      }
-      
-      logReplacement(round, court, position, oldPlayer, newId, 'principal');
-      showNotice(`${getPlayerName(oldPlayer)} et ${getPlayerName(newId)} échangent leur place pour le Tour ${round + 1} uniquement (les autres tours ne changent pas)`);
-    }
-    
-    scheduleAutoSave();
-    generateTournament();
-    calculateRanking();
-    updateStats();
-  }
+  const setSlot = function (owner, player) {
+    const list = (playerReplacements[owner] || []).filter(e => e.fromRound !== round);
+    if (player !== owner) list.push({ substitute: player, fromRound: round });
+    list.sort((a, b) => a.fromRound - b.fromRound);
+    if (list.length) playerReplacements[owner] = list; else delete playerReplacements[owner];
+  };
+  setSlot(oldOwner, q);
+  if (otherOwner !== null && otherOwner !== oldOwner) setSlot(otherOwner, shown);
+
+  logReplacement(round, court, position, shown, q, 'principal');
+  showNotice(`${getPlayerName(shown)} et ${getPlayerName(q)} échangent leur place pour le Tour ${round + 1} uniquement (les autres tours ne changent pas)`);
+
+  scheduleAutoSave();
+  generateTournament();
+  calculateRanking();
+  updateStats();
 }
 
 
