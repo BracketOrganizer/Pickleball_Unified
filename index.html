@@ -2627,82 +2627,82 @@ const gridsByTerrain = {
   // 8 joueurs : 2 terrains (4 joueurs par tour)
   8: [
     [{players:[1,3,5,7]},{players:[2,4,6,8]}],
-    [{players:[1,2,3,4]},{players:[5,6,7,8]}],
+    [{players:[1,2,3,4]},{players:[6,5,7,8]}],
     [{players:[1,6,2,5]},{players:[3,8,4,7]}],
     [{players:[1,5,4,8]},{players:[2,6,3,7]}],
-    [{players:[1,4,2,3]},{players:[5,8,6,7]}]
+    [{players:[5,8,2,3]},{players:[1,4,6,7]}]
   ],
   
   // 9 joueurs : 2 terrains (4 joueurs par tour + 1 repos)
   9: [
-    [{players:[2,3,4,5]},{players:[6,7,8,9]},{rest:1}],
-    [{players:[1,6,3,7]},{players:[4,8,5,9]},{rest:2}],
-    [{players:[1,4,6,8]},{players:[2,5,7,9]},{rest:3}],
-    [{players:[1,2,3,5]},{players:[6,9,7,8]},{rest:4}],
-    [{players:[1,9,2,6]},{players:[3,8,4,7]},{rest:5}]
+    [{players:[5,2,7,8]},{players:[4,3,6,1]},{rest:9}],
+    [{players:[9,2,6,4]},{players:[1,3,7,5]},{rest:8}],
+    [{players:[1,7,2,6]},{players:[5,8,9,4]},{rest:3}],
+    [{players:[9,8,3,6]},{players:[4,5,7,2]},{rest:1}],
+    [{players:[4,2,9,3]},{players:[1,5,6,8]},{rest:7}]
   ],
   
   // 10 joueurs : 3 terrains (2 terrains 2x2 + 1 terrain 1x1)
   10: [
-    [{players:[3,4,6,9]},{players:[5,10,7,8]},{players:[1,2],type:'1x1'}],
-    [{players:[1,7,6,8]},{players:[9,10,2,5]},{players:[3,4],type:'1x1'}],
-    [{players:[1,2,7,4]},{players:[3,9,10,8]},{players:[5,6],type:'1x1'}],
-    [{players:[2,4,6,10]},{players:[1,9,3,5]},{players:[7,8],type:'1x1'}],
-    [{players:[1,3,2,8]},{players:[7,5,4,6]},{players:[9,10],type:'1x1'}]
+    [{players:[2,10,9,8]},{players:[1,3,6,5]},{players:[7,4],type:'1x1'}],
+    [{players:[9,3,4,7]},{players:[5,10,2,6]},{players:[8,1],type:'1x1'}],
+    [{players:[8,5,7,9]},{players:[6,1,2,4]},{players:[10,3],type:'1x1'}],
+    [{players:[2,1,7,3]},{players:[5,4,8,10]},{players:[6,9],type:'1x1'}],
+    [{players:[9,4,2,5]},{players:[10,6,1,7]},{players:[8,3],type:'1x1'}]
   ],
   
   // 11 joueurs : 3 terrains (2 terrains 2x2 + 1 terrain 2x1)
   11: [
-    [{players:[4,6,5,7]},{players:[8,10,9,11]},{players:[1,2,3],type:'2x1'}],
-    [{players:[1,5,8,11]},{players:[2,3,6,10]},{players:[4,7,9],type:'2x1'}],
-    [{players:[2,11,7,9]},{players:[1,4,3,6]},{players:[5,8,10],type:'2x1'}],
-    [{players:[2,7,5,10]},{players:[3,4,8,9]},{players:[1,6,11],type:'2x1'}],
-    [{players:[6,11,7,8]},{players:[1,10,4,5]},{players:[3,9,2],type:'2x1'}]
+    [{players:[7,1,6,3]},{players:[5,11,9,8]},{players:[4,2,10],type:'2x1'}],
+    [{players:[6,9,8,2]},{players:[3,1,10,5]},{players:[4,11,7],type:'2x1'}],
+    [{players:[9,11,3,10]},{players:[2,1,7,8]},{players:[6,4,5],type:'2x1'}],
+    [{players:[5,1,2,11]},{players:[6,7,9,10]},{players:[8,4,3],type:'2x1'}],
+    [{players:[10,7,5,8]},{players:[3,11,2,6]},{players:[4,1,9],type:'2x1'}]
   ],
   
   // 12 joueurs : 3 terrains (tous les terrains 2x2)
   12: [
-    [{players:[7,5,12,9]},{players:[1,6,8,10]},{players:[4,2,3,11]}],
-    [{players:[9,1,3,12]},{players:[10,2,7,8]},{players:[5,6,11,4]}],
-    [{players:[7,12,4,8]},{players:[6,2,5,3]},{players:[9,11,10,1]}],   
-    [{players:[9,8,3,6]},{players:[1,4,5,10]},{players:[2,7,12,11]}],
-    [{players:[7,6,4,3]},{players:[2,11,1,8]},{players:[5,9,12,10]}]
+    [{players:[12,5,10,1]},{players:[2,8,11,6]},{players:[4,3,9,7]}],
+    [{players:[8,10,9,1]},{players:[3,11,4,12]},{players:[5,7,2,6]}],
+    [{players:[10,9,11,2]},{players:[4,6,1,12]},{players:[5,8,7,3]}],
+    [{players:[12,10,8,7]},{players:[2,3,1,11]},{players:[5,6,9,4]}],
+    [{players:[6,3,10,2]},{players:[7,1,9,11]},{players:[5,4,8,12]}]
   ],
   
   // 13 joueurs : 3 terrains + 1 repos
   13: [
-    [{players:[1,2,3,4]},{players:[5,6,7,8]},{players:[9,10,11,13]},{rest:12}],
-    [{players:[2,5,6,13]},{players:[8,9,10,3]},{players:[4,7,11,12]},{rest:1}],
-    [{players:[1,10,4,5]},{players:[2,6,12,8]},{players:[7,11,9,13]},{rest:3}],
-    [{players:[1,3,6,10]},{players:[2,8,7,13]},{players:[4,12,9,11]},{rest:5}],
-    [{players:[1,6,12,13]},{players:[2,7,3,9]},{players:[5,8,10,11]},{rest:4}]
+    [{players:[3,10,8,7]},{players:[4,11,1,2]},{players:[9,6,13,12]},{rest:5}],
+    [{players:[9,2,8,1]},{players:[10,13,5,3]},{players:[6,4,11,7]},{rest:12}],
+    [{players:[9,5,11,3]},{players:[8,13,1,7]},{players:[6,12,10,2]},{rest:4}],
+    [{players:[5,12,4,8]},{players:[13,7,11,2]},{players:[9,1,6,10]},{rest:3}],
+    [{players:[6,11,8,3]},{players:[2,4,10,9]},{players:[7,12,1,5]},{rest:13}]
   ],
   
   // 14 joueurs : 3 terrains + 2 repos
   14: [
-    [{players:[1,3,2,4]},{players:[6,7,8,9]},{players:[11,12,13,14]},{rest:5},{rest:10}],
-    [{players:[5,10,1,2]},{players:[6,12,3,7]},{players:[13,4,9,14]},{rest:8},{rest:11}],
-    [{players:[1,8,11,14]},{players:[2,9,3,12]},{players:[5,4,10,13]},{rest:6},{rest:7}],
-    [{players:[1,6,10,12]},{players:[2,11,5,14]},{players:[7,8,13,9]},{rest:3},{rest:4}],
-    [{players:[1,13,6,3]},{players:[2,8,10,11]},{players:[5,7,4,14]},{rest:9},{rest:12}]
+    [{players:[14,9,3,6]},{players:[13,1,8,10]},{players:[2,4,7,11]},{rest:12},{rest:5}],
+    [{players:[12,14,13,11]},{players:[7,8,5,10]},{players:[2,6,4,1]},{rest:9},{rest:3}],
+    [{players:[14,6,5,2]},{players:[9,3,13,4]},{players:[7,1,12,11]},{rest:8},{rest:10}],
+    [{players:[9,5,12,2]},{players:[3,14,1,8]},{players:[11,4,10,13]},{rest:7},{rest:6}],
+    [{players:[1,6,13,7]},{players:[5,3,10,11]},{players:[9,12,8,14]},{rest:4},{rest:2}]
   ],
   
   // 15 joueurs : 3 terrains + 3 repos
   15: [
-    [{players:[2,4,7,10]},{players:[1,5,13,15]},{players:[9,14,8,6]},{rest:3},{rest:11},{rest:12}],
-    [{players:[12,13,6,15]},{players:[1,14,2,9]},{players:[10,11,5,3]},{rest:4},{rest:7},{rest:8}],
-    [{players:[8,3,1,12]},{players:[7,6,5,2]},{players:[11,14,10,4]},{rest:9},{rest:13},{rest:15}],
-    [{players:[15,9,8,14]},{players:[10,5,4,12]},{players:[7,13,3,11]},{rest:1},{rest:2},{rest:6}],
-    [{players:[8,11,2,3]},{players:[6,12,4,1]},{players:[9,13,7,15]},{rest:5},{rest:10},{rest:14}]
+    [{players:[9,2,7,10]},{players:[8,5,1,14]},{players:[13,15,4,6]},{rest:3},{rest:12},{rest:11}],
+    [{players:[13,6,10,5]},{players:[12,2,15,1]},{players:[9,3,14,11]},{rest:7},{rest:4},{rest:8}],
+    [{players:[2,8,11,6]},{players:[12,5,3,4]},{players:[7,14,10,1]},{rest:15},{rest:9},{rest:13}],
+    [{players:[12,11,13,10]},{players:[14,3,7,15]},{players:[8,9,4,5]},{rest:2},{rest:1},{rest:6}],
+    [{players:[4,12,2,7]},{players:[15,8,9,13]},{players:[6,1,11,3]},{rest:14},{rest:10},{rest:5}]
   ],
   
   // 16 joueurs : 3 terrains + 4 repos
   16: [
-    [{players:[3,14,5,13]},{players:[6,1,7,12]},{players:[8,10,11,4]},{rest:2},{rest:9},{rest:15},{rest:16}],
-    [{players:[12,15,11,8]},{players:[4,7,16,9]},{players:[2,13,5,1]},{rest:3},{rest:6},{rest:10},{rest:14}],
-    [{players:[1,15,6,3]},{players:[8,16,10,2]},{players:[9,7,13,14]},{rest:4},{rest:5},{rest:11},{rest:12}],
-    [{players:[12,3,2,6]},{players:[15,4,11,14]},{players:[9,5,16,10]},{rest:1},{rest:7},{rest:8},{rest:13}],
-    [{players:[12,6,4,8]},{players:[5,16,11,1]},{players:[2,15,13,7]},{rest:3},{rest:9},{rest:10},{rest:14}]
+    [{players:[16,8,12,7]},{players:[10,11,14,5]},{players:[9,15,1,4]},{rest:3},{rest:6},{rest:2},{rest:13}],
+    [{players:[11,13,3,15]},{players:[9,7,5,6]},{players:[2,14,8,4]},{rest:10},{rest:1},{rest:16},{rest:12}],
+    [{players:[5,13,12,8]},{players:[4,3,16,7]},{players:[1,10,2,6]},{rest:11},{rest:9},{rest:15},{rest:14}],
+    [{players:[14,13,6,16]},{players:[10,15,3,9]},{players:[2,4,5,11]},{rest:8},{rest:1},{rest:7},{rest:12}],
+    [{players:[13,12,2,9]},{players:[16,11,6,10]},{players:[15,1,8,7]},{rest:5},{rest:4},{rest:3},{rest:14}]
   ]
   },
 
@@ -2710,85 +2710,85 @@ const gridsByTerrain = {
   4: {
   // 12 joueurs : 3 terrains (6 joueurs par tour)
    12: [
-    [{players:[7,5,12,9]},{players:[1,6,8,10]},{players:[4,2,3,11]}],
-    [{players:[9,1,3,12]},{players:[10,2,7,8]},{players:[5,6,11,4]}],
-    [{players:[7,12,4,8]},{players:[6,2,5,3]},{players:[9,11,10,1]}],   
-    [{players:[9,8,3,6]},{players:[1,4,5,10]},{players:[2,7,12,11]}],
-    [{players:[7,6,4,3]},{players:[2,11,1,8]},{players:[5,9,12,10]}]
+    [{players:[5,9,1,3]},{players:[11,4,6,10]},{players:[8,7,12,2]}],
+    [{players:[3,5,4,8]},{players:[10,9,6,7]},{players:[11,2,12,1]}],
+    [{players:[9,7,2,4]},{players:[1,6,12,3]},{players:[8,5,10,11]}],
+    [{players:[10,5,9,12]},{players:[2,7,3,11]},{players:[6,4,8,1]}],
+    [{players:[6,2,4,5]},{players:[7,1,10,8]},{players:[12,11,3,9]}]
   ],
 
   
   // 13 joueurs : 3 terrains (6 joueurs par tour + 1 repos)
   13: [
-    [{players:[1,2,3,4]},{players:[5,6,7,8]},{players:[9,10,11,13]}, {rest:12}],
-    [{players:[2,5,6,13]},{players:[8,9,10,3]},{players:[4,7,11,12]}, {rest:1}],
-    [{players:[1,10,4,5]},{players:[2,6,12,8]},{players:[7,11,9,13]}, {rest:3}],
-    [{players:[1,3,6,10]},{players:[2,8,7,13]},{players:[4,12,9,11]}, {rest:5}],
-    [{players:[1,6,12,13]},{players:[2,7,3,9]},{players:[5,8,10,11]}, {rest:4}]
+    [{players:[7,3,4,12]},{players:[11,9,13,8]},{players:[10,6,2,5]},{rest:1}],
+    [{players:[1,12,13,5]},{players:[2,6,9,3]},{players:[8,11,10,7]},{rest:4}],
+    [{players:[1,7,6,9]},{players:[8,10,4,13]},{players:[2,3,5,11]},{rest:12}],
+    [{players:[1,6,8,4]},{players:[9,12,10,11]},{players:[5,3,13,7]},{rest:2}],
+    [{players:[3,12,9,8]},{players:[1,4,11,2]},{players:[6,7,10,13]},{rest:5}]
   ],
 
   
   // 14 joueurs : 4 terrains (3 terrains 2x2 + 1 terrain 1x1)
   14: [
-    [{players:[1,2,3,4]},{players:[5,6,7,8]},{players:[9,10,11,12]},{players:[13,14],type:'1x1'}],
-    [{players:[1,5,9,11]},{players:[10,2,7,14]},{players:[3,6,12,13]},{players:[4,8],type:'1x1'}],
-    [{players:[1,10,6,13]},{players:[7,9,4,12]},{players:[8,3,5,14]},{players:[2,11],type:'1x1'}],
-    [{players:[1,7,14,8]},{players:[11,13,9,6]},{players:[12,2,3,5]},{players:[4,10],type:'1x1'}],
-    [{players:[1,8,12,10]},{players:[13,2,7,4]},{players:[14,3,5,11]},{players:[6,9],type:'1x1'}]
+    [{players:[3,13,11,1]},{players:[10,12,8,5]},{players:[2,4,14,9]},{players:[7,6],type:'1x1'}],
+    [{players:[9,2,8,6]},{players:[5,11,7,4]},{players:[14,12,10,1]},{players:[13,3],type:'1x1'}],
+    [{players:[10,2,11,7]},{players:[9,6,13,12]},{players:[8,14,3,5]},{players:[4,1],type:'1x1'}],
+    [{players:[12,4,2,3]},{players:[8,13,14,7]},{players:[9,1,11,10]},{players:[5,6],type:'1x1'}],
+    [{players:[4,13,8,10]},{players:[9,11,14,5]},{players:[6,2,1,3]},{players:[12,7],type:'1x1'}]
   ],
   
   // 15 joueurs : 4 terrains (3 terrains 2x2 + 1 terrain 2x1)
   15: [
-    [{players:[1,2,3,4]},{players:[5,6,7,8]},{players:[9,10,11,12]},{players:[13,14,15],type:'2x1'}],
-    [{players:[1,5,9,13]},{players:[6,15,12,2]},{players:[4,14,7,3]},{players:[10,11,8],type:'2x1'}],
-    [{players:[8,6,1,3]},{players:[2,10,5,14]},{players:[13,15,4,11]},{players:[9,12,7],type:'2x1'}],
-    [{players:[2,7,15,3]},{players:[1,9,11,14]},{players:[8,12,13,10]},{players:[4,5,6],type:'2x1'}],
-    [{players:[5,7,13,8]},{players:[14,9,12,6]},{players:[4,10,11,15]},{players:[2,3,1],type:'2x1'}]
+    [{players:[3,15,12,14]},{players:[1,13,4,11]},{players:[2,5,7,8]},{players:[10,6,9],type:'2x1'}],
+    [{players:[9,13,8,15]},{players:[7,6,3,1]},{players:[4,14,2,10]},{players:[11,5,12],type:'2x1'}],
+    [{players:[5,13,1,14]},{players:[11,8,4,3]},{players:[10,15,2,6]},{players:[12,7,9],type:'2x1'}],
+    [{players:[8,14,12,1]},{players:[4,7,6,15]},{players:[3,5,2,9]},{players:[13,11,10],type:'2x1'}],
+    [{players:[12,2,6,1]},{players:[7,9,14,13]},{players:[10,11,5,8]},{players:[15,4,3],type:'2x1'}]
   ],
   
   // 16 joueurs : 4 terrains (tous les terrains 2x2)
   16: [
-    [{players:[1,2,3,4]},{players:[5,6,7,8]},{players:[9,10,11,12]},{players:[13,14,15,16]}],
-    [{players:[1,5,9,13]},{players:[2,10,6,14]},{players:[3,7,11,15]},{players:[12,8,4,16]}],
-    [{players:[1,6,11,16]},{players:[2,7,12,13]},{players:[3,8,9,14]},{players:[4,5,10,15]}],
-    [{players:[1,7,10,14]},{players:[2,11,8,15]},{players:[3,5,12,16]},{players:[4,9,6,13]}],
-    [{players:[6,12,8,13]},{players:[2,9,11,14]},{players:[3,16,1,10]},{players:[4,7,5,15]}]
+    [{players:[5,2,12,10]},{players:[4,8,14,6]},{players:[11,16,15,13]},{players:[1,9,7,3]}],
+    [{players:[3,11,7,5]},{players:[4,6,15,10]},{players:[13,14,1,12]},{players:[8,2,16,9]}],
+    [{players:[4,11,16,2]},{players:[15,1,8,5]},{players:[7,9,6,12]},{players:[3,14,13,10]}],
+    [{players:[4,15,9,3]},{players:[8,14,11,7]},{players:[16,6,5,12]},{players:[10,2,13,1]}],
+    [{players:[2,14,15,6]},{players:[7,8,13,5]},{players:[9,4,11,1]},{players:[16,12,3,10]}]
   ],
 
   // 17 joueurs : 4 terrains + 1 repos
   17: [
-    [{players:[1,2,3,4]},{players:[5,6,7,8]},{players:[9,10,11,12]},{players:[13,14,15,16]}, {rest:17}],
-    [{players:[17,1,15,9]},{players:[13,3,6,10]},{players:[5,7,2,11]},{players:[14,4,8,12]}, {rest:16}],
-    [{players:[16,14,6,11]},{players:[13,1,7,12]},{players:[2,3,8,9]},{players:[17,4,5,10]}, {rest:15}],
-    [{players:[15,12,7,10]},{players:[16,11,2,8]},{players:[17,5,9,3]},{players:[13,4,6,1]}, {rest:14}],
-    [{players:[14,8,1,12]},{players:[5,3,15,11]},{players:[17,6,2,10]},{players:[16,4,7,9]}, {rest:13}]
+    [{players:[11,4,9,7]},{players:[15,1,2,12]},{players:[14,3,8,17]},{players:[13,16,6,5]},{rest:10}],
+    [{players:[1,4,16,5]},{players:[11,17,15,8]},{players:[6,10,12,14]},{players:[2,3,9,13]},{rest:7}],
+    [{players:[6,11,3,10]},{players:[8,13,4,16]},{players:[14,15,7,1]},{players:[2,9,17,12]},{rest:5}],
+    [{players:[14,6,5,4]},{players:[16,8,15,2]},{players:[17,13,11,12]},{players:[3,9,7,10]},{rest:1}],
+    [{players:[15,13,9,14]},{players:[10,2,5,7]},{players:[16,1,3,17]},{players:[6,12,11,8]},{rest:4}]
   ],
   
   // 18 joueurs : 4 terrains + 2 repos
   18: [
-    [{players:[1,2,3,4]},{players:[5,6,7,8]},{players:[9,10,11,12]},{players:[13,14,15,16]},{rest:17},{rest:18}],
-    [{players:[9,11,5,1]},{players:[18,13,2,6]},{players:[10,14,3,7]},{players:[17,15,4,8]},{rest:12},{rest:16}],
-    [{players:[16,18,5,10]},{players:[12,17,7,11]},{players:[1,13,3,8]},{players:[2,14,4,9]},{rest:6},{rest:15}],
-    [{players:[15,18,7,9]},{players:[5,17,8,10]},{players:[12,16,4,6]},{players:[1,14,2,11]},{rest:3},{rest:13}],
-    [{players:[13,15,8,11]},{players:[9,16,3,12]},{players:[5,14,4,17]},{players:[7,18,1,6]},{rest:2},{rest:10}]
+    [{players:[3,7,14,15]},{players:[9,2,13,12]},{players:[18,4,1,11]},{players:[17,6,5,10]},{rest:8},{rest:16}],
+    [{players:[17,11,15,7]},{players:[18,16,6,2]},{players:[9,13,10,4]},{players:[12,5,3,8]},{rest:14},{rest:1}],
+    [{players:[1,17,3,13]},{players:[16,15,4,9]},{players:[8,11,10,14]},{players:[6,5,12,7]},{rest:2},{rest:18}],
+    [{players:[2,5,11,4]},{players:[6,14,13,17]},{players:[10,16,1,15]},{players:[12,8,18,7]},{rest:3},{rest:9}],
+    [{players:[4,17,8,18]},{players:[11,7,9,16]},{players:[10,13,5,3]},{players:[6,1,14,2]},{rest:12},{rest:15}]
   ],
   
   // 19 joueurs : 4 terrains + 3 repos
   19: [
-    [{players:[1,2,3,4]},{players:[5,6,7,8]},{players:[9,10,11,12]},{players:[13,14,15,16]},{rest:17},{rest:18},{rest:19}],
-    [{players:[17,1,5,9]},{players:[18,13,2,6]},{players:[19,10,14,3]},{players:[7,4,15,11]},{rest:8},{rest:12},{rest:16}],
-    [{players:[16,17,6,11]},{players:[12,9,18,15]},{players:[3,19,13,8]},{players:[14,7,1,4]},{rest:2},{rest:5},{rest:10}],
-    [{players:[14,17,7,9]},{players:[10,18,8,5]},{players:[2,16,15,1]},{players:[12,19,4,6]},{rest:3},{rest:11},{rest:13}],
-    [{players:[13,15,11,19]},{players:[3,16,5,12]},{players:[8,10,4,17]},{players:[7,18,2,9]},{rest:1},{rest:14},{rest:6}]
+    [{players:[15,10,7,14]},{players:[9,17,2,1]},{players:[6,19,11,4]},{players:[5,18,3,8]},{rest:16},{rest:12},{rest:13}],
+    [{players:[1,10,18,8]},{players:[13,12,17,16]},{players:[3,6,9,19]},{players:[5,11,2,14]},{rest:15},{rest:7},{rest:4}],
+    [{players:[8,6,2,13]},{players:[9,18,15,7]},{players:[1,12,4,19]},{players:[10,3,11,16]},{rest:5},{rest:14},{rest:17}],
+    [{players:[14,18,13,19]},{players:[4,15,3,11]},{players:[8,7,12,17]},{players:[2,5,1,16]},{rest:9},{rest:6},{rest:10}],
+    [{players:[9,14,18,12]},{players:[1,19,10,16]},{players:[13,4,2,7]},{players:[6,5,15,17]},{rest:3},{rest:11},{rest:8}]
   ],
   
   // 20 joueurs : 4 terrains + 4 repos
   20: [
-    [{players:[1,2,3,4]},{players:[5,6,7,8]},{players:[9,10,11,12]},{players:[17,14,15,16]},{rest:13},{rest:18},{rest:19},{rest:20}],
-    [{players:[17,3,5,9]},{players:[18,6,13,2]},{players:[19,10,14,1]},{players:[20,7,11,15]},{rest:4},{rest:8},{rest:12},{rest:16}],
-    [{players:[16,17,6,10]},{players:[12,18,7,11]},{players:[8,19,13,3]},{players:[4,20,14,9]},{rest:1},{rest:2},{rest:5},{rest:15}],
-    [{players:[15,7,16,9]},{players:[5,17,8,13]},{players:[2,18,14,4]},{players:[1,19,20,12]},{rest:3},{rest:6},{rest:10},{rest:11}],
-    [{players:[20,15,8,11]},{players:[3,16,19,12]},{players:[5,13,4,10]},{players:[1,18,6,2]},{rest:7},{rest:17},{rest:14},{rest:9}]
+    [{players:[1,2,3,15]},{players:[5,6,9,8]},{players:[7,10,4,12]},{players:[17,14,11,16]},{rest:13},{rest:18},{rest:19},{rest:20}],
+    [{players:[17,3,5,18]},{players:[9,6,13,2]},{players:[19,11,7,1]},{players:[20,14,10,15]},{rest:4},{rest:8},{rest:12},{rest:16}],
+    [{players:[19,17,6,10]},{players:[18,13,7,11]},{players:[8,16,3,12]},{players:[4,20,14,9]},{rest:1},{rest:2},{rest:5},{rest:15}],
+    [{players:[8,7,16,9]},{players:[5,17,15,13]},{players:[2,18,14,4]},{players:[1,19,20,12]},{rest:3},{rest:6},{rest:10},{rest:11}],
+    [{players:[20,15,8,4]},{players:[13,16,10,19]},{players:[5,3,11,12]},{players:[1,18,6,2]},{rest:14},{rest:17},{rest:7},{rest:9}]
   ]
   },
 
@@ -2796,47 +2796,47 @@ const gridsByTerrain = {
   5: {
   // 16 joueurs : 4 terrains (8 joueurs par tour)
   16: [
-    [{players:[1,2,3,4]},{players:[5,6,7,8]},{players:[9,10,11,12]},{players:[13,14,15,16]}],
-    [{players:[1,5,9,13]},{players:[2,10,6,14]},{players:[3,7,11,15]},{players:[12,8,4,16]}],
-    [{players:[1,6,11,16]},{players:[2,7,12,13]},{players:[3,8,9,14]},{players:[4,5,10,15]}],
-    [{players:[1,7,10,14]},{players:[2,11,8,15]},{players:[3,5,12,16]},{players:[4,9,6,13]}],
-    [{players:[6,12,8,13]},{players:[2,9,11,14]},{players:[3,16,1,10]},{players:[4,7,5,15]}]
+    [{players:[10,9,16,7]},{players:[15,14,4,11]},{players:[3,1,13,2]},{players:[5,6,8,12]}],
+    [{players:[6,3,5,10]},{players:[2,9,12,15]},{players:[7,13,14,11]},{players:[4,16,8,1]}],
+    [{players:[8,11,3,10]},{players:[6,7,1,16]},{players:[9,5,14,2]},{players:[15,4,13,12]}],
+    [{players:[12,2,14,13]},{players:[4,1,10,11]},{players:[5,3,9,16]},{players:[8,6,7,15]}],
+    [{players:[14,3,1,15]},{players:[12,9,10,8]},{players:[16,6,11,2]},{players:[4,13,5,7]}]
   ],
   
   // 17 joueurs : 4 terrains + 1 repos (8 joueurs par tour)
   17: [
-    [{players:[1,2,3,4]},{players:[5,6,7,8]},{players:[9,10,11,12]},{players:[13,14,15,16]}, {rest:17}],
-    [{players:[17,1,15,9]},{players:[13,3,6,10]},{players:[5,7,2,11]},{players:[14,4,8,12]}, {rest:16}],
-    [{players:[16,14,6,11]},{players:[13,1,7,12]},{players:[2,3,8,9]},{players:[17,4,5,10]}, {rest:15}],
-    [{players:[15,12,7,10]},{players:[16,11,2,8]},{players:[17,5,9,3]},{players:[13,4,6,1]}, {rest:14}],
-    [{players:[14,8,1,12]},{players:[5,3,15,11]},{players:[17,6,2,10]},{players:[16,4,7,9]}, {rest:13}]
+    [{players:[5,8,16,13]},{players:[15,4,10,7]},{players:[2,17,14,1]},{players:[9,11,3,12]},{rest:6}],
+    [{players:[2,12,10,13]},{players:[16,8,9,7]},{players:[4,1,11,14]},{players:[6,15,3,17]},{rest:5}],
+    [{players:[10,8,14,3]},{players:[17,4,16,5]},{players:[1,7,12,13]},{players:[2,9,6,11]},{rest:15}],
+    [{players:[9,16,15,2]},{players:[10,12,6,8]},{players:[5,11,14,7]},{players:[4,3,17,13]},{rest:1}],
+    [{players:[13,1,10,9]},{players:[6,14,16,7]},{players:[11,8,5,17]},{players:[15,3,4,12]},{rest:2}]
   ],
   
   // 18 joueurs : 5 terrains (4 terrains normaux + 1 terrain 1x1)
   18: [
-    [{players:[1,2,3,4]},{players:[5,6,7,8]},{players:[9,10,11,12]},{players:[13,14,15,16]},{players:[17,18], type:'1x1'}],
-    [{players:[1,3,9,13]},{players:[18,2,6,10]},{players:[14,17,5,7]},{players:[11,15,4,8]},{players:[16,12], type:'1x1'}],
-    [{players:[1,11,6,17]},{players:[16,4,5,13]},{players:[12,18,3,9]},{players:[7,14,8,2]},{players:[15,10], type:'1x1'}],
-    [{players:[1,7,9,18]},{players:[17,2,8,10]},{players:[13,3,5,15]},{players:[16,12,4,11]},{players:[6,14], type:'1x1'}],
-    [{players:[1,8,11,14]},{players:[18,5,2,9]},{players:[13,10,4,6]},{players:[17,7,15,3]},{players:[16,12], type:'1x1'}]
+    [{players:[13,10,8,7]},{players:[15,14,1,11]},{players:[6,12,9,4]},{players:[16,18,2,17]},{players:[5,3],type:'1x1'}],
+    [{players:[6,8,15,2]},{players:[18,11,3,10]},{players:[7,13,5,14]},{players:[16,9,1,4]},{players:[17,12],type:'1x1'}],
+    [{players:[10,8,17,12]},{players:[13,6,1,16]},{players:[11,4,7,18]},{players:[3,15,9,2]},{players:[5,14],type:'1x1'}],
+    [{players:[17,15,14,7]},{players:[9,1,18,2]},{players:[8,4,3,5]},{players:[16,6,11,12]},{players:[13,10],type:'1x1'}],
+    [{players:[9,6,10,7]},{players:[5,11,2,12]},{players:[8,16,14,18]},{players:[4,15,13,17]},{players:[1,3],type:'1x1'}]
   ],
   
   // 19 joueurs : 5 terrains (4 terrains normaux + 1 terrain 2x1)
   19: [
-    [{players:[1,2,3,4]},{players:[5,6,7,8]},{players:[9,10,11,12]},{players:[13,14,15,16]},{players:[17,18,19], type:'2x1'}],
-    [{players:[17,1,5,9]},{players:[13,18,8,6]},{players:[10,14,19,3]},{players:[7,11,15,4]},{players:[16,2,12], type:'2x1'}],
-    [{players:[16,17,11,6]},{players:[1,13,19,2]},{players:[7,10,14,18]},{players:[3,9,12,15]},{players:[4,8,5], type:'2x1'}],
-    [{players:[18,10,5,1]},{players:[17,6,4,19]},{players:[12,8,2,14]},{players:[16,7,3,13]},{players:[15,9,11], type:'2x1'}],
-    [{players:[8,16,15,19]},{players:[11,1,6,13]},{players:[18,2,4,9]},{players:[5,10,12,17]},{players:[3,7,14], type:'2x1'}]
+    [{players:[10,11,6,8]},{players:[16,12,9,5]},{players:[18,7,17,2]},{players:[13,1,3,4]},{players:[14,15,19],type:'2x1'}],
+    [{players:[17,14,13,9]},{players:[12,11,1,4]},{players:[16,10,3,19]},{players:[6,7,8,18]},{players:[5,15,2],type:'2x1'}],
+    [{players:[16,17,15,2]},{players:[18,13,1,11]},{players:[12,4,8,14]},{players:[19,9,7,3]},{players:[6,10,5],type:'2x1'}],
+    [{players:[15,19,11,6]},{players:[2,5,13,14]},{players:[12,8,3,17]},{players:[16,7,1,10]},{players:[9,4,18],type:'2x1'}],
+    [{players:[13,10,12,15]},{players:[6,19,4,17]},{players:[9,3,2,11]},{players:[1,18,5,8]},{players:[14,16,7],type:'2x1'}]
   ],
   
   // 20 joueurs : 5 terrains (tous les terrains normaux)
   20: [
-    [{players:[1,2,3,4]},{players:[5,6,7,8]},{players:[9,10,11,12]},{players:[13,14,15,16]},{players:[17,18,19,20]}],
-    [{players:[1,5,9,13]},{players:[18,2,6,10]},{players:[3,17,14,8]},{players:[11,4,19,15]},{players:[7,16,12,20]}],
-    [{players:[1,9,11,2]},{players:[17,16,7,18]},{players:[13,12,6,8]},{players:[3,14,19,4]},{players:[5,10,15,20]}],
-    [{players:[1,7,9,18]},{players:[17,2,12,10]},{players:[13,19,4,5]},{players:[16,14,20,6]},{players:[3,8,11,15]}],
-    [{players:[1,8,16,19]},{players:[17,4,2,9]},{players:[13,10,3,6]},{players:[18,5,14,15]},{players:[7,12,11,20]}]
+    [{players:[1,2,3,5]},{players:[4,7,6,8]},{players:[9,10,11,12]},{players:[13,18,15,16]},{players:[17,14,19,20]}],
+    [{players:[9,5,7,13]},{players:[18,2,6,10]},{players:[3,17,14,8]},{players:[11,4,19,15]},{players:[1,16,12,20]}],
+    [{players:[1,9,6,18]},{players:[17,16,7,3]},{players:[13,12,11,19]},{players:[2,14,8,4]},{players:[5,10,15,20]}],
+    [{players:[1,7,13,15]},{players:[4,17,12,10]},{players:[18,19,5,2]},{players:[16,11,14,6]},{players:[3,8,9,20]}],
+    [{players:[19,1,8,16]},{players:[15,4,17,9]},{players:[13,10,3,6]},{players:[5,18,11,14]},{players:[7,12,2,20]}]
   ]
   }
 };
