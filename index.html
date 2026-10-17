@@ -83,6 +83,17 @@
   .player-color-18{color:#333}
   .player-color-19{color:#333}
   .player-color-20{color:#333}
+  .player-color-21{color:#333}
+  .player-color-22{color:#333}
+  .player-color-23{color:#333}
+  .player-color-24{color:#333}
+  .player-color-25{color:#333}
+  .player-color-26{color:#333}
+  .player-color-27{color:#333}
+  .player-color-28{color:#333}
+  .player-color-29{color:#333}
+  .player-color-30{color:#333}
+  .player-color-31{color:#333}
   
   .stats-grid{display:grid;grid-template-columns:1fr;gap:10px;margin-top:8px}
   .stat-card{background:linear-gradient(135deg,#f8f9fa,#e9ecef);padding:10px;border-radius:6px;border-left:3px solid var(--info)}
@@ -407,6 +418,39 @@ import {
   collection, serverTimestamp, addDoc, getDocs, arrayUnion, arrayRemove
 } from 'https://www.gstatic.com/firebasejs/10.12.0/firebase-firestore.js';
 
+// ══════════════════════════════════════════════════════════
+// GROUPES (clubs) : Mauves / Thouaré — données totalement séparées
+// Le groupe Mauves garde les documents historiques ; le groupe Thouaré utilise les
+// mêmes collections avec des documents suffixés « _thouare » (tournoi, licenciés,
+// noms connus, inscriptions, chronos, bilan de saison, messages). Les comptes
+// utilisateurs portent la liste des groupes auxquels ils ont accès (champ « clubs »).
+// ══════════════════════════════════════════════════════════
+const CLUBS = { mauves: 'Mauves', thouare: 'Thouaré' };
+const CLUB = (function () {
+  try {
+    const q = new URLSearchParams(location.search).get('club');
+    if (q && CLUBS[q]) { localStorage.setItem('pb_club', q); return q; }
+    const s = localStorage.getItem('pb_club');
+    return (s && CLUBS[s]) ? s : 'mauves';
+  } catch (e) { return 'mauves'; }
+})();
+function cid(name) { return CLUB === 'mauves' ? name : name + '_' + CLUB; }
+function userClubs(d) { return (d && Array.isArray(d.clubs) && d.clubs.length) ? d.clubs : ['mauves']; }
+window.CLUB = CLUB; window.CLUBS = CLUBS; window.CLUB_LABEL = CLUBS[CLUB]; window.cid = cid;
+window.switchClub = function (c) {
+  if (!CLUBS[c] || c === CLUB) return;
+  try { localStorage.setItem('pb_club', c); } catch (e) {}
+  location.href = location.pathname + '?club=' + c;
+};
+window.applyClubUI = function () {
+  document.title = 'Pickleball Unified — ' + CLUBS[CLUB];
+  document.querySelectorAll('.club-name').forEach(function (el) { el.textContent = CLUBS[CLUB]; });
+  document.querySelectorAll('.club-switch-btn').forEach(function (b) { b.classList.toggle('active', b.dataset.club === CLUB); });
+  document.querySelectorAll('select.club-switch-select').forEach(function (s) { s.value = CLUB; });
+};
+document.addEventListener('DOMContentLoaded', function () { window.applyClubUI(); });
+if (document.readyState !== 'loading') window.applyClubUI();
+
 const firebaseConfig = {
   apiKey: "AIzaSyB_CyX-kqltedx2bddoCjRFqQM5Vy657bs",
   authDomain: "pickleball-unifie.firebaseapp.com",
@@ -465,7 +509,7 @@ function applyChronoMobileFlag(d) {
 //    pour savoir si le bouton "Mode Spectateur" doit s'activer) ─────────────
 function startLiveWatch() {
   if (unsubLiveStatus) return;
-  unsubLiveStatus = onSnapshot(doc(db, 'tournamentStatus', 'live'), (snap) => {
+  unsubLiveStatus = onSnapshot(doc(db, 'tournamentStatus', cid('live')), (snap) => {
     LIVE_OPEN = snap.exists() && snap.data().liveOpen === true;
     applyChronoMobileFlag(snap.exists() ? snap.data() : null);
     updateLiveToggleBadge();
@@ -494,7 +538,7 @@ function refreshKnownPlayersDatalist() {
     .map(n => `<option value="${n.replace(/"/g, '&quot;')}">`).join('');
 }
 function startKnownPlayersWatch() {
-  onSnapshot(doc(db, 'tournamentStatus', 'knownPlayers'), (snap) => {
+  onSnapshot(doc(db, 'tournamentStatus', cid('knownPlayers')), (snap) => {
     knownPlayerNames = (snap.exists() && Array.isArray(snap.data().names)) ? snap.data().names : [];
     refreshKnownPlayersDatalist();
   }, (e) => console.warn('startKnownPlayersWatch error:', e));
@@ -513,7 +557,7 @@ window.fbRegisterKnownPlayerNames = async function (names) {
   if (cleaned.length === 0) return;
   if (!isScorer()) return;
   try {
-    await setDoc(doc(db, 'tournamentStatus', 'knownPlayers'), { names: arrayUnion(...cleaned) }, { merge: true });
+    await setDoc(doc(db, 'tournamentStatus', cid('knownPlayers')), { names: arrayUnion(...cleaned) }, { merge: true });
   } catch (e) {
     console.warn('fbRegisterKnownPlayerNames error:', e);
   }
@@ -532,7 +576,7 @@ window.PB_LICENSEES = [];
 let pbLicUnsub = null, pbLicRetry = 3000;
 function startLicenseesWatch() {
   if (pbLicUnsub) { try { pbLicUnsub(); } catch (e) {} pbLicUnsub = null; }
-  pbLicUnsub = onSnapshot(doc(db, 'tournamentStatus', 'licensees'), (snap) => {
+  pbLicUnsub = onSnapshot(doc(db, 'tournamentStatus', cid('licensees')), (snap) => {
     pbLicRetry = 3000;
     const arr = (snap.exists() && Array.isArray(snap.data().names)) ? snap.data().names : [];
     window.PB_LICENSEES = arr
@@ -560,15 +604,15 @@ window.fbAddLicensees = async function (names) {
   if (!isScorer()) throw new Error('Réservé aux rôles admin / scorer.');
   const cleaned = [...new Set((names || []).map(n => (n || '').trim()).filter(Boolean))];
   if (cleaned.length === 0) return;
-  await setDoc(doc(db, 'tournamentStatus', 'licensees'), { names: arrayUnion(...cleaned) }, { merge: true });
+  await setDoc(doc(db, 'tournamentStatus', cid('licensees')), { names: arrayUnion(...cleaned) }, { merge: true });
 };
 window.fbSetLicensees = async function (names) {
   if (!isAdmin()) throw new Error('Réservé au rôle admin.');
-  await setDoc(doc(db, 'tournamentStatus', 'licensees'), { names: names }, { merge: true });
+  await setDoc(doc(db, 'tournamentStatus', cid('licensees')), { names: names }, { merge: true });
 };
 window.fbRemoveLicensee = async function (name) {
   if (!isAdmin()) throw new Error('Réservé au rôle admin.');
-  await setDoc(doc(db, 'tournamentStatus', 'licensees'), { names: arrayRemove(name) }, { merge: true });
+  await setDoc(doc(db, 'tournamentStatus', cid('licensees')), { names: arrayRemove(name) }, { merge: true });
 };
 
 // Les invités ne vont pas dans la liste des noms connus : quand le registre
@@ -593,7 +637,7 @@ let unsubRegList = null;
 
 function startRegistrationWatch() {
   if (unsubRegConfig) return;
-  unsubRegConfig = onSnapshot(doc(db, 'tournamentStatus', 'registration'), (snap) => {
+  unsubRegConfig = onSnapshot(doc(db, 'tournamentStatus', cid('registration')), (snap) => {
     REG_CONFIG = snap.exists() ? snap.data() : { open: false, deadline: null, maxCount: null };
     if (typeof updateRegistrationButton === 'function') updateRegistrationButton();
     if (typeof refreshAdminRegistrationUI === 'function') refreshAdminRegistrationUI();
@@ -601,7 +645,8 @@ function startRegistrationWatch() {
   unsubRegList = onSnapshot(collection(db, 'registrations'), (snap) => {
     REG_COUNT = snap.size;
     window.REG_LIST = [];
-    snap.forEach(d => window.REG_LIST.push(Object.assign({ id: d.id }, d.data())));
+    snap.forEach(d => { const x = d.data(); if ((x.club || 'mauves') === CLUB) window.REG_LIST.push(Object.assign({ id: d.id }, x)); });
+    REG_COUNT = window.REG_LIST.length;
     window.REG_LIST.sort((a, b) => (a.createdAtLocal || 0) - (b.createdAtLocal || 0));
     if (typeof updateRegistrationButton === 'function') updateRegistrationButton();
     if (typeof refreshAdminRegistrationUI === 'function') refreshAdminRegistrationUI();
@@ -631,7 +676,7 @@ window.adminSaveRegistrationConfig = async function () {
     maxCount: maxEl && maxEl.value ? parseInt(maxEl.value) : null
   };
   try {
-    await setDoc(doc(db, 'tournamentStatus', 'registration'), payload, { merge: true });
+    await setDoc(doc(db, 'tournamentStatus', cid('registration')), payload, { merge: true });
     showNotice('Paramètres d\'inscription enregistrés');
   } catch (e) { alert('Erreur : ' + e.message); }
 };
@@ -642,7 +687,7 @@ window.adminClearRegistrations = async function () {
   try {
     const snap = await getDocs(collection(db, 'registrations'));
     const proms = [];
-    snap.forEach(d => proms.push(deleteDoc(doc(db, 'registrations', d.id))));
+    snap.forEach(d => { if ((d.data().club || 'mauves') === CLUB) proms.push(deleteDoc(doc(db, 'registrations', d.id))); });
     await Promise.all(proms);
     showNotice('Liste des inscriptions effacée');
   } catch (e) { alert('Erreur : ' + e.message); }
@@ -664,6 +709,7 @@ window.submitRegistration = async function () {
   try {
     await addDoc(collection(db, 'registrations'), {
       name: name,
+      club: CLUB,
       phone: phoneEl ? phoneEl.value.trim() : '',
       createdAt: serverTimestamp(),
       createdAtLocal: Date.now()
@@ -857,7 +903,7 @@ async function estimateClockOffset(){
 estimateClockOffset();
 setInterval(estimateClockOffset, 15*60*1000);
 
-function timerDocId(key) { return key === 'global' ? 'timer' : ('timer_terrain_' + key); }
+function timerDocId(key) { return cid(key === 'global' ? 'timer' : ('timer_terrain_' + key)); }
 // Reprise automatique des écouteurs du chrono : s'ils échouent (ex. avant la
 // connexion), ils étaient définitivement coupés et le chrono ne s'affichait plus.
 const timerWanted = {}, timerRetryMs = {};
@@ -898,7 +944,7 @@ function unwatchTimer(key) {
 let timerModeUnsub = null, timerModeRetry = 3000;
 function watchTimerMode() {
   if (timerModeUnsub || !chronoWanted()) return;
-  timerModeUnsub = onSnapshot(doc(db, 'tournamentStatus', 'timerMode'), (snap) => {
+  timerModeUnsub = onSnapshot(doc(db, 'tournamentStatus', cid('timerMode')), (snap) => {
     timerModeRetry = 3000;
     const perTerrain = !!(snap.exists() && snap.data().perTerrain);
     if (perTerrain === TIMER_PER_TERRAIN) return;
@@ -918,7 +964,7 @@ window.toggleChronoPerTerrain = async function () {
   const toggle = document.getElementById('chronoPerTerrainToggle');
   const perTerrain = !!(toggle && toggle.checked);
   try {
-    await setDoc(doc(db, 'tournamentStatus', 'timerMode'), { perTerrain }, { merge: true });
+    await setDoc(doc(db, 'tournamentStatus', cid('timerMode')), { perTerrain }, { merge: true });
   } catch (e) { alert('Erreur : ' + e.message); }
 };
 function applyChronoModeUI() {
@@ -987,7 +1033,7 @@ window.toggleChronoMobile = async function () {
   if (!isAdmin()) return;
   const t = document.getElementById('chronoMobileToggle');
   const on = !!(t && t.checked);
-  try { await setDoc(doc(db, 'tournamentStatus', 'live'), { chronoMobile: on }, { merge: true }); }
+  try { await setDoc(doc(db, 'tournamentStatus', cid('live')), { chronoMobile: on }, { merge: true }); }
   catch (e) { if (t) t.checked = CHRONO_MOBILE; alert('Erreur : ' + (e && e.message ? e.message : e)); }
 };
 
@@ -1169,7 +1215,7 @@ window.archiveCurrentSessionToSeason = async function () {
   const session = { date: new Date().toISOString(), entries: entries };
   const key = 'terrain_' + TERRAINS;
   try {
-    const ref = doc(db, 'seasonArchive', key);
+    const ref = doc(db, 'seasonArchive', cid(key));
     const snap = await getDoc(ref);
     const sessions = snap.exists() && Array.isArray(snap.data().sessions) ? snap.data().sessions : [];
     sessions.push(session);
@@ -1184,11 +1230,11 @@ window.loadSeasonBilan = async function () {
   if (!container) return;
   container.innerHTML = '<p style="text-align:center;color:#666;padding:20px">Chargement du bilan…</p>';
   try {
-    const groups = [3, 4, 5];
+    const groups = [3, 4, 5, 6, 7];
     let html = '';
     window.seasonSessionsCache = window.seasonSessionsCache || {};
     for (const t of groups) {
-      const ref = doc(db, 'seasonArchive', 'terrain_' + t);
+      const ref = doc(db, 'seasonArchive', cid('terrain_' + t));
       const snap = await getDoc(ref);
       const sessions = snap.exists() && Array.isArray(snap.data().sessions) ? snap.data().sessions : [];
       window.seasonSessionsCache[t] = sessions;
@@ -1276,7 +1322,7 @@ window.deleteSeasonSession = async function (terrains, index) {
   const label = isNaN(d.getTime()) ? (sess.date || '') : d.toLocaleString('fr-FR');
   if (!confirm('Supprimer la séance archivée du ' + label + ' (' + terrains + ' terrains) ? Cette action est irréversible.')) return;
   try {
-    const ref = doc(db, 'seasonArchive', 'terrain_' + terrains);
+    const ref = doc(db, 'seasonArchive', cid('terrain_' + terrains));
     const snap = await getDoc(ref);
     const current = snap.exists() && Array.isArray(snap.data().sessions) ? snap.data().sessions : [];
     current.splice(index, 1);
@@ -1355,7 +1401,7 @@ window.saveEditSeasonSession = async function (terrains, index) {
     });
   });
   try {
-    const ref = doc(db, 'seasonArchive', 'terrain_' + terrains);
+    const ref = doc(db, 'seasonArchive', cid('terrain_' + terrains));
     const snap = await getDoc(ref);
     const current = snap.exists() && Array.isArray(snap.data().sessions) ? snap.data().sessions : [];
     if (!current[index]) {
@@ -1383,8 +1429,8 @@ window.openMergePlayerNamesModal = async function () {
   let names = new Set(knownPlayerNames || []);
   const archiveNames = new Set();
   try {
-    for (const t of [3, 4, 5]) {
-      const snap = await getDoc(doc(db, 'seasonArchive', 'terrain_' + t));
+    for (const t of [3, 4, 5, 6, 7]) {
+      const snap = await getDoc(doc(db, 'seasonArchive', cid('terrain_' + t)));
       const sessions = snap.exists() && Array.isArray(snap.data().sessions) ? snap.data().sessions : [];
       sessions.forEach(sess => (sess.entries || []).forEach(e => { if (e.name) { names.add(e.name); archiveNames.add(e.name); } }));
     }
@@ -1458,8 +1504,8 @@ window.confirmMergePlayerNames = async function () {
   }
   if (!confirm(`Remplacer "${oldName}" par "${newName}" dans tout le bilan de saison ? Cette action est irréversible.`)) return;
   try {
-    for (const t of [3, 4, 5]) {
-      const ref = doc(db, 'seasonArchive', 'terrain_' + t);
+    for (const t of [3, 4, 5, 6, 7]) {
+      const ref = doc(db, 'seasonArchive', cid('terrain_' + t));
       const snap = await getDoc(ref);
       if (!snap.exists()) continue;
       const sessions = Array.isArray(snap.data().sessions) ? snap.data().sessions : [];
@@ -1500,8 +1546,8 @@ window.confirmMergePlayerNames = async function () {
     }
     // Le nom abandonné ne doit plus être suggéré à la saisie.
     try {
-      await setDoc(doc(db, 'tournamentStatus', 'knownPlayers'), { names: arrayRemove(oldName) }, { merge: true });
-      await setDoc(doc(db, 'tournamentStatus', 'knownPlayers'), { names: arrayUnion(newName) }, { merge: true });
+      await setDoc(doc(db, 'tournamentStatus', cid('knownPlayers')), { names: arrayRemove(oldName) }, { merge: true });
+      await setDoc(doc(db, 'tournamentStatus', cid('knownPlayers')), { names: arrayUnion(newName) }, { merge: true });
     } catch (e) { console.warn('maj knownPlayers après fusion:', e); }
 
     closeMergePlayerNamesModal();
@@ -1522,6 +1568,7 @@ async function ensureUserDoc(user) {
       name: user.displayName || (user.email ? user.email.split('@')[0] : 'Utilisateur'),
       role: 'spectateur',
       roles: ['spectateur'],
+      clubs: [CLUB],
       createdAt: serverTimestamp()
     });
   }
@@ -1532,10 +1579,10 @@ async function getUserProfile(uid) {
     if (snap.exists()) {
       const d = snap.data();
       const roles = Array.isArray(d.roles) && d.roles.length ? d.roles : [d.role || 'spectateur'];
-      return { roles, name: d.name || '' };
+      return { roles, name: d.name || '', clubs: userClubs(d) };
     }
   } catch (e) { console.warn('getUserProfile error:', e); }
-  return { roles: ['spectateur'], name: '' };
+  return { roles: ['spectateur'], name: '', clubs: [CLUB] };
 }
 
 onAuthStateChanged(auth, async (user) => {
@@ -1543,6 +1590,14 @@ onAuthStateChanged(auth, async (user) => {
     CURRENT_USER = user;
     await ensureUserDoc(user);
     const profile = await getUserProfile(user.uid);
+    // Groupes séparés : un compte n'ouvre que les groupes qui lui sont attribués
+    if (!profile.clubs.includes(CLUB)) {
+      await signOut(auth);
+      CURRENT_USER = null; USER_ROLES = [];
+      showLogin();
+      showAuthMsg('Ce compte n\'a pas accès au groupe ' + CLUBS[CLUB] + '.', 'red');
+      return;
+    }
     USER_ROLES = profile.roles;
     if (window.pbKickWatchers) window.pbKickWatchers();
 
@@ -1557,7 +1612,7 @@ onAuthStateChanged(auth, async (user) => {
     // Compte "spectateur" : accès conditionné à l'ouverture du Live
     if (!LIVE_OPEN) {
       try {
-        const snap = await getDoc(doc(db, 'tournamentStatus', 'live'));
+        const snap = await getDoc(doc(db, 'tournamentStatus', cid('live')));
         LIVE_OPEN = snap.exists() && snap.data().liveOpen === true;
       } catch (e) { LIVE_OPEN = false; }
     }
@@ -1627,7 +1682,7 @@ window.enterLiveModeAndGo = async function (target) {
   // classement) est conditionné à l'ouverture du Live par l'admin.
   if (target !== 'reglement') {
     try {
-      const snap = await getDoc(doc(db, 'tournamentStatus', 'live'));
+      const snap = await getDoc(doc(db, 'tournamentStatus', cid('live')));
       LIVE_OPEN = snap.exists() && snap.data().liveOpen === true;
     } catch (e) {
       showAuthMsg('Connexion impossible pour le moment.', 'red');
@@ -1663,7 +1718,7 @@ window.enterLiveModeAndGo = async function (target) {
 // window car un script classique expose ses fonctions globalement.
 window.openPlayerScreenFromLogin = async function () {
   try {
-    const snap = await getDoc(doc(db, 'tournamentStatus', 'live'));
+    const snap = await getDoc(doc(db, 'tournamentStatus', cid('live')));
     LIVE_OPEN = snap.exists() && snap.data().liveOpen === true;
   } catch (e) {
     showAuthMsg('Connexion impossible pour le moment.', 'red');
@@ -1746,7 +1801,7 @@ function updateLiveToggleBadge() {
 window.toggleLiveOpen = async function () {
   if (!isAdmin()) return;
   try {
-    await setDoc(doc(db, 'tournamentStatus', 'live'), { liveOpen: !LIVE_OPEN }, { merge: true });
+    await setDoc(doc(db, 'tournamentStatus', cid('live')), { liveOpen: !LIVE_OPEN }, { merge: true });
   } catch (e) { console.error(e); showNotice('Erreur : ' + e.message); }
 };
 
@@ -1755,7 +1810,7 @@ window.toggleLiveOpen = async function () {
 // ══════════════════════════════════════════════════════════
 function subscribeToTournament() {
   if (unsubTournament) return;
-  unsubTournament = onSnapshot(doc(db, 'tournament', 'current'), (snap) => {
+  unsubTournament = onSnapshot(doc(db, 'tournament', cid('current')), (snap) => {
     if (!snap.exists()) return;
     applyTournamentData(snap.data());
   }, (e) => console.warn('subscribeToTournament error:', e));
@@ -1770,7 +1825,7 @@ function subscribeToTournament() {
     tournamentPollInterval = setInterval(async () => {
       if (document.hidden) return; // inutile quand l'écran est éteint ou l'onglet masqué
       try {
-        const snap = await getDoc(doc(db, 'tournament', 'current'));
+        const snap = await getDoc(doc(db, 'tournament', cid('current')));
         if (snap.exists()) applyTournamentData(snap.data());
       } catch (e) { /* silencieux : le listener temps réel reste la source principale */ }
     }, 30000);
@@ -1780,7 +1835,7 @@ let unsubMessages = null, TV_MESSAGES = [];
 function subscribeToMessages() {
   if (unsubMessages) return;
   unsubMessages = onSnapshot(collection(db, 'pickleball_unified_messages'), (snap) => {
-    TV_MESSAGES = snap.docs.map(d => ({ id: d.id, ...d.data() }));
+    TV_MESSAGES = snap.docs.map(d => ({ id: d.id, ...d.data() })).filter(m => (m.club || 'mauves') === CLUB);
     renderScheduledMessagesList();
     updateTVMessageDisplay();
   }, (e) => console.warn('subscribeToMessages error:', e));
@@ -1789,7 +1844,7 @@ function subscribeToMessages() {
 // ── Messages écran (bandeau / plein écran, programmés ou manuels) ─────────
 window.openMessagesModal = function(){
   renderScheduledMessagesList();
-  const manual = TV_MESSAGES.find(m=>m.id==='manual');
+  const manual = TV_MESSAGES.find(m=>m.id===cid('manual'));
   document.getElementById('manualMsgText').value = manual ? (manual.text||'') : '';
   document.getElementById('manualMsgFlash').checked = manual ? !!manual.flash : false;
   document.getElementById('manualMsgFlashSec').value = manual && manual.flashSec ? manual.flashSec : 5;
@@ -1810,12 +1865,12 @@ window.sendManualMessage = async function(){
   const sound = document.getElementById('manualMsgSound').checked;
   const vibrate = document.getElementById('manualMsgVibrate').checked;
   try {
-    await setDoc(doc(db,'pickleball_unified_messages','manual'), { text, flash, flashSec, fullscreen, sound, vibrate, manual:true, enabled:true, createdAt:Date.now() }, { merge:true });
+    await setDoc(doc(db,'pickleball_unified_messages',cid('manual')), { club:CLUB, text, flash, flashSec, fullscreen, sound, vibrate, manual:true, enabled:true, createdAt:Date.now() }, { merge:true });
     document.getElementById('manualMsgStatus').textContent = '🔴 En cours de diffusion';
   } catch(e){ console.error('sendManualMessage', e); alert('Erreur : '+e.message); }
 };
 window.stopManualMessage = async function(){
-  try { await setDoc(doc(db,'pickleball_unified_messages','manual'), { enabled:false }, { merge:true }); document.getElementById('manualMsgStatus').textContent=''; }
+  try { await setDoc(doc(db,'pickleball_unified_messages',cid('manual')), { club:CLUB, enabled:false }, { merge:true }); document.getElementById('manualMsgStatus').textContent=''; }
   catch(e){ console.error('stopManualMessage', e); }
 };
 window.addScheduledMessage = async function(){
@@ -1832,7 +1887,7 @@ window.addScheduledMessage = async function(){
   const vibrate = document.getElementById('newMsgVibrate').checked;
   try {
     const ref = doc(collection(db,'pickleball_unified_messages'));
-    await setDoc(ref, { text, startAt:new Date(start).toISOString(), endAt:new Date(end).toISOString(), flash, flashSec, fullscreen, sound, vibrate, manual:false, enabled:true, createdAt:Date.now() });
+    await setDoc(ref, { club:CLUB, text, startAt:new Date(start).toISOString(), endAt:new Date(end).toISOString(), flash, flashSec, fullscreen, sound, vibrate, manual:false, enabled:true, createdAt:Date.now() });
     document.getElementById('newMsgText').value=''; document.getElementById('newMsgStart').value=''; document.getElementById('newMsgEnd').value='';
     document.getElementById('newMsgFlash').checked=false; document.getElementById('newMsgFlashSec').value=5; document.getElementById('newMsgFull').checked=false;
     document.getElementById('newMsgSound').checked=false; document.getElementById('newMsgVibrate').checked=false;
@@ -1884,7 +1939,7 @@ function playTVMsgAlert(){
 function vibrateTVMsgAlert(){ try { if(navigator.vibrate) navigator.vibrate([200,100,200,100,200]); } catch(e){} }
 
 function getActiveTVMessage(){
-  const manual = TV_MESSAGES.find(m=>m.id==='manual' && m.enabled);
+  const manual = TV_MESSAGES.find(m=>m.id===cid('manual') && m.enabled);
   if(manual) return manual;
   const now = Date.now();
   const active = TV_MESSAGES.filter(m=>!m.manual && m.enabled!==false && m.startAt && m.endAt && now>=new Date(m.startAt).getTime() && now<=new Date(m.endAt).getTime());
@@ -1921,7 +1976,7 @@ window.updateTVMessageDisplay = function(){
 // cohérent avec les règles de sécurité Firestore.
 window.fbSaveTournament = async function (payload) {
   if (!isScorer()) throw new Error('Lecture seule.');
-  const ref  = doc(db, 'tournament', 'current');
+  const ref  = doc(db, 'tournament', cid('current'));
   const meta = { updatedAt: serverTimestamp(), updatedBy: CURRENT_USER ? CURRENT_USER.uid : 'inconnu' };
   if (isAdmin()) {
     await setDoc(ref, Object.assign({}, payload, meta), { merge: true });
@@ -1957,13 +2012,10 @@ window.loadUserList = function () {
   if (!listEl) return;
   if (unsubUserList) return;
   unsubUserList = onSnapshot(collection(db, 'users'), (snap) => {
-    if (snap.empty) {
-      listEl.innerHTML = '<tr><td colspan="4" style="color:#999;font-size:0.8rem;padding:10px">Aucun utilisateur.</td></tr>';
-      return;
-    }
     let rows = '';
     snap.forEach(d => {
       const u = d.data();
+      if (!userClubs(u).includes(CLUB)) return;   // utilisateurs des autres groupes : jamais affichés
       const uid = d.id;
       const roles = Array.isArray(u.roles) && u.roles.length ? u.roles : [u.role || 'spectateur'];
       const icon = { admin: '👑', scorer: '✏️', spectateur: '👁' };
@@ -1977,7 +2029,7 @@ window.loadUserList = function () {
         + (uid !== (CURRENT_USER && CURRENT_USER.uid) ? '<button class="btn danger" style="padding:4px 8px;margin:2px" onclick="adminDeleteUser(\'' + uid + '\',\'' + safeName + '\')"><i class="fas fa-trash"></i></button>' : '')
         + '</td></tr>';
     });
-    listEl.innerHTML = rows;
+    listEl.innerHTML = rows || '<tr><td colspan="4" style="color:#999;font-size:0.8rem;padding:10px">Aucun utilisateur.</td></tr>';
   }, (e) => console.warn('loadUserList error:', e));
 };
 
@@ -2002,7 +2054,7 @@ window.adminCreateUser = async function () {
     if (data.error) throw new Error(data.error.message);
     const uid = data.localId;
     await setDoc(doc(db, 'users', uid), {
-      email, name, role: roles[0], roles,
+      email, name, role: roles[0], roles, clubs: [CLUB],
       createdAt: serverTimestamp(), createdBy: CURRENT_USER.uid
     });
     msg.textContent = '✅ Compte créé : ' + name + ' (' + roles.join(', ') + ')';
@@ -2025,6 +2077,9 @@ window.adminEditUserRole = async function (uid, name) {
   document.getElementById('adminUidInput').value = uid;
   document.getElementById('roleEditName').textContent = name;
   document.querySelectorAll('.chgU_roleChk').forEach(c => c.checked = roles.includes(c.value));
+  const otherClub = CLUB === 'mauves' ? 'thouare' : 'mauves';
+  const oc = document.getElementById('chgU_otherClub');
+  if (oc) { oc.checked = userClubs(d).includes(otherClub); document.getElementById('chgU_otherClubName').textContent = CLUBS[otherClub]; }
   document.getElementById('roleEditBox').style.display = 'block';
   document.getElementById('adminRoleMsg').textContent = '';
 };
@@ -2037,7 +2092,10 @@ window.adminSaveUserRoles = async function () {
   if (!uid) return;
   if (roles.length === 0) { msg.textContent = 'Sélectionnez au moins un rôle.'; msg.style.color = 'var(--danger)'; return; }
   try {
-    await setDoc(doc(db, 'users', uid), { role: roles[0], roles }, { merge: true });
+    const otherClub = CLUB === 'mauves' ? 'thouare' : 'mauves';
+    const oc = document.getElementById('chgU_otherClub');
+    const clubs = [CLUB].concat(oc && oc.checked ? [otherClub] : []);
+    await setDoc(doc(db, 'users', uid), { role: roles[0], roles, clubs }, { merge: true });
     msg.textContent = '✅ Rôles mis à jour.'; msg.style.color = 'var(--success)';
     setTimeout(() => { document.getElementById('roleEditBox').style.display = 'none'; }, 1200);
   } catch (e) {
@@ -2078,7 +2136,7 @@ document.addEventListener('visibilitychange', () => {
     clearTimeout(_bgPauseTimer); _bgPauseTimer = null;
     if (_bgPaused) { _bgPaused = false; enableNetwork(db).catch(() => {}); }
     // Au retour : on rattrape tout de suite l'état du tournoi (le sondage ne tourne plus qu'écran visible)
-    if (tournamentPollInterval) getDoc(doc(db, 'tournament', 'current')).then(snap => { if (snap.exists()) applyTournamentData(snap.data()); }).catch(() => {});
+    if (tournamentPollInterval) getDoc(doc(db, 'tournament', cid('current'))).then(snap => { if (snap.exists()) applyTournamentData(snap.data()); }).catch(() => {});
   }
 });
 </script>
@@ -2090,7 +2148,11 @@ document.addEventListener('visibilitychange', () => {
 <div id="loginScreen">
   <div class="login-card">
     <h2><i class="fas fa-table-tennis-paddle-ball"></i> Pickleball Unified</h2>
-    <p class="sub">Connexion admin / scorer</p>
+    <div class="club-switch" style="display:flex;gap:6px;justify-content:center;margin:2px 0 10px">
+      <button type="button" class="session-btn club-switch-btn" data-club="mauves" onclick="switchClub('mauves')">Mauves</button>
+      <button type="button" class="session-btn club-switch-btn" data-club="thouare" onclick="switchClub('thouare')">Thouaré</button>
+    </div>
+    <p class="sub">Connexion admin / scorer — groupe <strong class="club-name"></strong></p>
     <input type="email" id="li_email" placeholder="Email" autocomplete="username">
     <input type="password" id="li_pwd" placeholder="Mot de passe" autocomplete="current-password">
     <button class="btn" style="background:var(--primary)" onclick="loginEmail()"><i class="fas fa-right-to-bracket"></i> Se connecter</button>
@@ -2183,7 +2245,7 @@ document.addEventListener('visibilitychange', () => {
 <!-- ═══════════════ MODE ÉCRAN (affichage public) ═══════════════ -->
 <div id="ecranScreen">
   <div class="ecran-header">
-    <h1><i class="fas fa-table-tennis-paddle-ball"></i> Pickleball Unified</h1>
+    <h1><i class="fas fa-table-tennis-paddle-ball"></i> Pickleball Unified <span class="club-name" style="font-size:0.6em;opacity:0.8"></span></h1>
     <div class="ecran-clock" id="ecranClock">--:--:--</div>
     <div class="ecran-chrono" id="ecranChrono"><i class="fas fa-stopwatch"></i> --:--</div>
   </div>
@@ -2223,10 +2285,14 @@ document.addEventListener('visibilitychange', () => {
 <!-- ═══════════════ APPLICATION (protégée) ═══════════════ -->
 <div class="app" id="appScreen" style="display:none">
   <header>
-    <h1><i class="fas fa-table-tennis-paddle-ball"></i> Pickleball Unified</h1>
+    <h1><i class="fas fa-table-tennis-paddle-ball"></i> Pickleball Unified <span class="club-name" style="font-size:0.6em;opacity:0.85"></span></h1>
 
     <div class="user-bar">
       <span id="hdrUserName">-</span>
+      <select class="club-switch-select" onchange="switchClub(this.value)" title="Changer de groupe" style="padding:4px 6px;border-radius:5px;border:1px solid #ccc;font-size:0.75rem">
+        <option value="mauves">Mauves</option>
+        <option value="thouare">Thouaré</option>
+      </select>
       <button id="liveToggleBadge" class="live-toggle-badge closed" data-role="admin" style="display:none" onclick="toggleLiveOpen()">Live fermé</button>
       <button class="btn danger" style="margin:0;padding:5px 10px" onclick="logout()"><i class="fas fa-right-from-bracket"></i> Déconnexion</button>
     </div>
@@ -2305,7 +2371,9 @@ document.addEventListener('visibilitychange', () => {
         <select id="terrainCount" onchange="changeTerrainCount()" style="padding:8px;border-radius:5px;border:2px solid #ddd;font-size:0.85rem;">
           <option value="3" selected>3 terrains (8 à 16 joueurs)</option>
           <option value="4">4 terrains (12 à 20 joueurs)</option>
-          <option value="5">5 terrains (16 à 20 joueurs)</option>
+          <option value="5">5 terrains (16 à 23 joueurs)</option>
+          <option value="6">6 terrains (24 à 27 joueurs)</option>
+          <option value="7">7 terrains (28 à 31 joueurs)</option>
         </select>
       </div>
       <div class="player-row">
@@ -2321,7 +2389,7 @@ document.addEventListener('visibilitychange', () => {
     </div>
 
     <div class="card" data-role="scorer">
-      <span class="card-title"><i class="fas fa-user-friends"></i> Joueurs (1-20)</span>
+      <span class="card-title"><i class="fas fa-user-friends"></i> Joueurs (1-31)</span>
       <div id="playersInputs"></div>
       <datalist id="knownPlayersDatalist"></datalist>
     </div>
@@ -2465,7 +2533,7 @@ document.addEventListener('visibilitychange', () => {
 
         <h3><i class="fas fa-border-all"></i> 2. Terrains et effectifs</h3>
         <p>Le nombre de terrains disponibles (3, 4 ou 5) détermine le nombre de joueurs pouvant participer
-        simultanément (de 8 à 20 joueurs). Selon l'effectif exact, un tour peut comporter :</p>
+        simultanément (de 8 à 31 joueurs). Selon l'effectif exact, un tour peut comporter :</p>
         <ul>
           <li>Des matchs classiques en <strong>double (2 contre 2)</strong> ;</li>
           <li>Exceptionnellement, un format <strong>1 contre 1</strong> ou <strong>2 contre 1</strong> sur un terrain,
@@ -2549,7 +2617,7 @@ document.addEventListener('visibilitychange', () => {
 
     <div class="card" id="pbLicCard">
       <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:6px">
-        <span class="card-title"><i class="fas fa-id-card"></i> Licenciés (<span id="pbLicCount">0</span>)</span>
+        <span class="card-title"><i class="fas fa-id-card"></i> Licenciés <span class="club-name"></span> (<span id="pbLicCount">0</span>)</span>
         <div class="no-print" style="display:flex;gap:6px">
           <button class="btn secondary" style="margin:0" onclick="printSection('pbLicCard')"><i class="fas fa-print"></i> Imprimer</button>
         </div>
@@ -2609,6 +2677,7 @@ document.addEventListener('visibilitychange', () => {
           <label><input type="checkbox" class="chgU_roleChk" value="scorer"> Scorer</label>
           <label><input type="checkbox" class="chgU_roleChk" value="spectateur"> Spectateur</label>
         </div>
+        <label style="display:flex;align-items:center;gap:6px;font-size:0.8rem;margin:6px 0;cursor:pointer"><input type="checkbox" id="chgU_otherClub"> Donner aussi accès au groupe <strong id="chgU_otherClubName"></strong></label>
         <button class="btn success" onclick="adminSaveUserRoles()"><i class="fas fa-check"></i> Enregistrer</button>
         <button class="btn" style="background:#999" onclick="document.getElementById('roleEditBox').style.display='none'">Annuler</button>
         <div id="adminRoleMsg" style="min-height:16px;font-size:0.8rem;margin-top:4px;font-weight:600"></div>
@@ -2837,6 +2906,103 @@ const gridsByTerrain = {
     [{players:[1,9,6,18]},{players:[17,16,7,3]},{players:[13,12,11,19]},{players:[2,14,8,4]},{players:[5,10,15,20]}],
     [{players:[1,7,13,15]},{players:[4,17,12,10]},{players:[18,19,5,2]},{players:[16,11,14,6]},{players:[3,8,9,20]}],
     [{players:[19,1,8,16]},{players:[15,4,17,9]},{players:[13,10,3,6]},{players:[5,18,11,14]},{players:[7,12,2,20]}]
+  ],
+
+  // 21 joueurs : 5 terrains + 1 repos
+  21: [
+    [{players:[5,18,19,17]},{players:[6,12,10,1]},{players:[3,9,21,11]},{players:[16,15,8,20]},{players:[7,13,14,4]},{rest:2}],
+    [{players:[10,2,7,21]},{players:[3,18,13,20]},{players:[5,6,8,14]},{players:[4,16,17,1]},{players:[15,19,12,11]},{rest:9}],
+    [{players:[2,9,10,4]},{players:[13,12,11,20]},{players:[18,6,5,15]},{players:[7,16,3,19]},{players:[14,21,8,17]},{rest:1}],
+    [{players:[1,7,17,20]},{players:[6,13,19,16]},{players:[5,8,11,10]},{players:[2,14,9,15]},{players:[21,4,18,12]},{rest:3}],
+    [{players:[3,1,19,2]},{players:[9,5,15,13]},{players:[14,20,10,21]},{players:[7,18,16,6]},{players:[8,11,17,4]},{rest:12}]
+  ],
+  // 22 joueurs : 5 terrains + 2 repos
+  22: [
+    [{players:[13,1,2,6]},{players:[18,22,10,17]},{players:[12,11,5,19]},{players:[8,7,4,14]},{players:[3,9,21,15]},{rest:20},{rest:16}],
+    [{players:[6,21,19,10]},{players:[18,17,13,4]},{players:[2,16,5,14]},{players:[1,15,8,20]},{players:[22,12,11,3]},{rest:9},{rest:7}],
+    [{players:[18,6,7,16]},{players:[13,20,5,22]},{players:[2,4,15,9]},{players:[1,21,11,14]},{players:[8,10,3,19]},{rest:17},{rest:12}],
+    [{players:[12,21,7,1]},{players:[4,17,5,6]},{players:[10,16,13,9]},{players:[11,18,3,20]},{players:[19,22,14,2]},{rest:15},{rest:8}],
+    [{players:[12,8,2,22]},{players:[1,10,5,16]},{players:[6,11,9,18]},{players:[7,21,20,17]},{players:[19,14,15,13]},{rest:4},{rest:3}]
+  ],
+  // 23 joueurs : 5 terrains + 3 repos
+  23: [
+    [{players:[5,16,3,23]},{players:[11,17,19,20]},{players:[1,4,10,13]},{players:[8,18,21,22]},{players:[7,14,6,2]},{rest:15},{rest:12},{rest:9}],
+    [{players:[20,21,15,14]},{players:[2,1,11,12]},{players:[18,3,17,7]},{players:[4,5,6,22]},{players:[19,13,23,9]},{rest:16},{rest:10},{rest:8}],
+    [{players:[1,11,14,22]},{players:[10,2,6,15]},{players:[5,7,9,12]},{players:[19,18,8,13]},{players:[16,21,20,4]},{rest:17},{rest:23},{rest:3}],
+    [{players:[8,4,23,7]},{players:[16,13,2,17]},{players:[5,19,20,1]},{players:[3,21,10,22]},{players:[14,9,12,15]},{rest:18},{rest:6},{rest:11}],
+    [{players:[15,19,5,6]},{players:[16,11,18,13]},{players:[8,23,3,1]},{players:[10,20,7,9]},{players:[4,17,2,12]},{rest:14},{rest:21},{rest:22}]
+  ]
+  },
+
+  // ===== 6 TERRAINS (24 a 27 joueurs) =====
+  6: {
+  // 24 joueurs : 6 terrains
+  24: [
+    [{players:[16,14,18,17]},{players:[15,23,8,11]},{players:[4,21,2,12]},{players:[3,20,10,9]},{players:[1,19,5,22]},{players:[6,7,24,13]}],
+    [{players:[7,24,1,14]},{players:[10,13,2,15]},{players:[8,19,4,17]},{players:[5,9,11,6]},{players:[18,21,20,23]},{players:[22,16,3,12]}],
+    [{players:[12,21,18,24]},{players:[14,13,20,22]},{players:[17,19,10,15]},{players:[16,9,5,8]},{players:[6,3,2,7]},{players:[11,23,1,4]}],
+    [{players:[19,13,1,11]},{players:[17,8,6,20]},{players:[16,18,7,22]},{players:[12,23,3,10]},{players:[14,9,2,4]},{players:[15,5,24,21]}],
+    [{players:[16,10,1,24]},{players:[6,12,11,14]},{players:[4,18,15,17]},{players:[21,13,3,8]},{players:[2,22,5,23]},{players:[7,19,9,20]}]
+  ],
+  // 25 joueurs : 6 terrains + 1 repos
+  25: [
+    [{players:[22,24,23,17]},{players:[9,20,16,21]},{players:[15,18,7,25]},{players:[8,10,2,19]},{players:[1,11,13,6]},{players:[5,4,12,14]},{rest:3}],
+    [{players:[1,19,5,22]},{players:[14,20,15,8]},{players:[2,25,16,9]},{players:[21,23,7,4]},{players:[6,11,10,18]},{players:[17,24,12,3]},{rest:13}],
+    [{players:[18,16,15,10]},{players:[8,25,6,5]},{players:[23,2,11,12]},{players:[24,1,7,21]},{players:[14,13,9,3]},{players:[20,4,19,17]},{rest:22}],
+    [{players:[7,12,25,3]},{players:[6,2,14,19]},{players:[21,24,5,8]},{players:[23,11,1,17]},{players:[13,16,22,4]},{players:[9,10,20,15]},{rest:18}],
+    [{players:[22,21,25,11]},{players:[15,24,6,1]},{players:[14,23,10,16]},{players:[9,18,5,3]},{players:[20,17,2,7]},{players:[8,19,12,13]},{rest:4}]
+  ],
+  // 26 joueurs : 6 terrains + 2 repos
+  26: [
+    [{players:[3,10,14,4]},{players:[22,25,11,9]},{players:[15,1,7,16]},{players:[26,20,5,12]},{players:[18,17,23,13]},{players:[2,21,8,24]},{rest:19},{rest:6}],
+    [{players:[17,14,7,22]},{players:[8,4,6,1]},{players:[25,13,23,24]},{players:[9,18,5,21]},{players:[11,12,3,16]},{players:[20,15,19,26]},{rest:2},{rest:10}],
+    [{players:[3,24,1,8]},{players:[15,25,20,14]},{players:[7,13,26,5]},{players:[21,9,2,17]},{players:[23,16,22,10]},{players:[4,6,19,18]},{rest:11},{rest:12}],
+    [{players:[3,22,7,21]},{players:[14,24,23,20]},{players:[26,4,8,25]},{players:[13,5,6,2]},{players:[19,9,10,18]},{players:[12,1,11,15]},{rest:17},{rest:16}],
+    [{players:[17,13,20,12]},{players:[19,16,26,7]},{players:[3,11,24,9]},{players:[21,22,15,6]},{players:[4,1,5,23]},{players:[25,18,10,2]},{rest:8},{rest:14}]
+  ],
+  // 27 joueurs : 6 terrains + 3 repos
+  27: [
+    [{players:[7,27,2,10]},{players:[6,13,3,5]},{players:[23,1,18,19]},{players:[16,25,8,14]},{players:[24,17,26,20]},{players:[21,22,12,11]},{rest:9},{rest:15},{rest:4}],
+    [{players:[9,4,8,10]},{players:[5,12,3,24]},{players:[7,13,6,1]},{players:[23,19,21,16]},{players:[2,18,14,20]},{players:[11,22,17,15]},{rest:27},{rest:26},{rest:25}],
+    [{players:[18,13,2,8]},{players:[27,17,6,21]},{players:[11,4,14,5]},{players:[23,16,24,15]},{players:[12,25,9,26]},{players:[10,3,22,20]},{rest:1},{rest:7},{rest:19}],
+    [{players:[23,11,2,26]},{players:[18,25,12,16]},{players:[20,8,14,7]},{players:[13,24,27,21]},{players:[5,4,9,15]},{players:[1,19,22,3]},{rest:17},{rest:10},{rest:6}],
+    [{players:[5,17,7,1]},{players:[8,15,19,12]},{players:[3,14,21,26]},{players:[16,13,10,9]},{players:[23,24,25,6]},{players:[20,4,22,27]},{rest:18},{rest:2},{rest:11}]
+  ]
+  },
+
+  // ===== 7 TERRAINS (28 a 31 joueurs) =====
+  7: {
+  // 28 joueurs : 7 terrains
+  28: [
+    [{players:[20,19,10,14]},{players:[21,5,28,2]},{players:[6,9,25,4]},{players:[18,23,7,22]},{players:[12,1,24,13]},{players:[11,15,26,17]},{players:[27,3,8,16]}],
+    [{players:[25,16,1,15]},{players:[27,5,17,10]},{players:[12,4,8,7]},{players:[26,20,13,2]},{players:[24,11,21,23]},{players:[22,14,6,28]},{players:[9,19,3,18]}],
+    [{players:[21,19,26,9]},{players:[20,16,8,24]},{players:[6,27,13,23]},{players:[7,10,1,25]},{players:[28,18,11,4]},{players:[17,3,14,2]},{players:[5,15,22,12]}],
+    [{players:[1,3,12,11]},{players:[25,14,4,2]},{players:[22,10,21,8]},{players:[20,17,7,9]},{players:[15,18,24,28]},{players:[16,27,26,6]},{players:[19,13,5,23]}],
+    [{players:[27,18,21,12]},{players:[15,2,23,6]},{players:[19,28,20,7]},{players:[1,5,14,4]},{players:[11,25,8,13]},{players:[26,16,22,9]},{players:[24,17,3,10]}]
+  ],
+  // 29 joueurs : 7 terrains + 1 repos
+  29: [
+    [{players:[20,21,24,22]},{players:[10,15,28,26]},{players:[29,6,1,12]},{players:[13,19,11,17]},{players:[25,27,9,7]},{players:[3,4,16,18]},{players:[5,14,2,23]},{rest:8}],
+    [{players:[29,22,26,24]},{players:[8,14,5,1]},{players:[28,9,16,2]},{players:[19,27,20,15]},{players:[23,11,17,21]},{players:[25,4,6,3]},{players:[10,12,13,18]},{rest:7}],
+    [{players:[23,7,4,12]},{players:[1,18,28,16]},{players:[11,14,27,22]},{players:[2,29,17,15]},{players:[8,20,25,3]},{players:[19,21,10,9]},{players:[26,6,13,5]},{rest:24}],
+    [{players:[13,27,25,22]},{players:[21,5,28,4]},{players:[18,17,9,15]},{players:[14,6,20,11]},{players:[26,29,8,7]},{players:[10,3,23,24]},{players:[1,2,19,12]},{rest:16}],
+    [{players:[1,17,21,10]},{players:[14,28,4,7]},{players:[27,3,5,19]},{players:[22,18,29,23]},{players:[25,24,15,26]},{players:[2,9,13,6]},{players:[12,16,8,11]},{rest:20}]
+  ],
+  // 30 joueurs : 7 terrains + 2 repos
+  30: [
+    [{players:[27,16,1,3]},{players:[6,9,26,4]},{players:[20,30,22,5]},{players:[13,17,21,10]},{players:[15,7,8,25]},{players:[14,12,11,23]},{players:[2,19,28,29]},{rest:18},{rest:24}],
+    [{players:[24,19,2,13]},{players:[22,29,25,1]},{players:[7,20,9,26]},{players:[12,23,8,17]},{players:[16,28,14,21]},{players:[27,15,18,10]},{players:[3,4,5,11]},{rest:6},{rest:30}],
+    [{players:[5,16,17,19]},{players:[26,3,12,30]},{players:[15,2,14,9]},{players:[11,18,29,21]},{players:[24,10,20,1]},{players:[23,22,13,28]},{players:[8,27,4,6]},{rest:25},{rest:7}],
+    [{players:[14,17,29,3]},{players:[7,16,4,27]},{players:[24,2,12,8]},{players:[11,1,6,25]},{players:[10,13,9,28]},{players:[20,15,21,30]},{players:[19,26,23,18]},{rest:5},{rest:22}],
+    [{players:[24,21,26,14]},{players:[12,9,19,30]},{players:[1,4,13,23]},{players:[20,5,8,16]},{players:[2,3,15,22]},{players:[10,27,11,25]},{players:[6,18,7,28]},{rest:17},{rest:29}]
+  ],
+  // 31 joueurs : 7 terrains + 3 repos
+  31: [
+    [{players:[20,13,26,4]},{players:[6,17,8,24]},{players:[31,14,1,2]},{players:[22,10,3,25]},{players:[18,16,27,11]},{players:[30,15,19,29]},{players:[7,23,9,21]},{rest:5},{rest:12},{rest:28}],
+    [{players:[6,29,21,28]},{players:[23,30,15,31]},{players:[7,12,8,18]},{players:[13,4,16,10]},{players:[1,11,27,25]},{players:[26,24,3,9]},{players:[22,17,14,5]},{rest:19},{rest:20},{rest:2}],
+    [{players:[19,1,22,5]},{players:[23,3,20,18]},{players:[26,16,28,8]},{players:[6,11,13,31]},{players:[27,15,4,21]},{players:[10,2,30,17]},{players:[12,25,14,24]},{rest:29},{rest:7},{rest:9}],
+    [{players:[4,1,6,24]},{players:[3,22,17,15]},{players:[29,2,23,11]},{players:[9,31,20,12]},{players:[5,8,28,27]},{players:[7,25,16,30]},{players:[19,21,14,18]},{rest:13},{rest:26},{rest:10}],
+    [{players:[25,14,5,23]},{players:[11,31,28,4]},{players:[10,26,7,21]},{players:[8,27,15,20]},{players:[1,22,29,30]},{players:[2,17,6,9]},{players:[3,12,19,13]},{rest:18},{rest:24},{rest:16}]
   ]
   }
 };
@@ -2870,9 +3036,26 @@ const PLAYER_OPTIONS_BY_TERRAIN = {
     {value:17, label:"17 joueurs (4 terrains + 1 repos)"},
     {value:18, label:"18 joueurs (5 terrains - 1x1)"},
     {value:19, label:"19 joueurs (5 terrains - 2x1)"},
-    {value:20, label:"20 joueurs (5 terrains)"}
+    {value:20, label:"20 joueurs (5 terrains)"},
+    {value:21, label:"21 joueurs (5 terrains + 1 repos)"},
+    {value:22, label:"22 joueurs (5 terrains + 2 repos)"},
+    {value:23, label:"23 joueurs (5 terrains + 3 repos)"}
+  ],
+  6: [
+    {value:24, label:"24 joueurs (6 terrains)"},
+    {value:25, label:"25 joueurs (6 terrains + 1 repos)"},
+    {value:26, label:"26 joueurs (6 terrains + 2 repos)"},
+    {value:27, label:"27 joueurs (6 terrains + 3 repos)"}
+  ],
+  7: [
+    {value:28, label:"28 joueurs (7 terrains)"},
+    {value:29, label:"29 joueurs (7 terrains + 1 repos)"},
+    {value:30, label:"30 joueurs (7 terrains + 2 repos)"},
+    {value:31, label:"31 joueurs (7 terrains + 3 repos)"}
   ]
 };
+
+const MAX_PLAYERS = 31;
 
 // Texte informatif "terrains" affiche lors du changement de nombre de joueurs
 function getTerrainInfoText(terrains, n) {
@@ -2899,6 +3082,13 @@ function getTerrainInfoText(terrains, n) {
     if (n === 18) return "5 terrains (dont 1x1)";
     if (n === 19) return "5 terrains (dont 2x1)";
     if (n === 20) return "5 terrains";
+    if (n >= 21 && n <= 23) return "5 terrains + " + (n - 20) + " repos";
+  } else if (terrains === 6) {
+    if (n === 24) return "6 terrains";
+    if (n >= 25 && n <= 27) return "6 terrains + " + (n - 24) + " repos";
+  } else if (terrains === 7) {
+    if (n === 28) return "7 terrains";
+    if (n >= 29 && n <= 31) return "7 terrains + " + (n - 28) + " repos";
   }
   return "";
 }
@@ -2924,7 +3114,16 @@ const LEGEND_BY_TERRAIN = {
     "17 joueurs : 4 terrains + 1 repos par tour",
     "18 joueurs : 5 terrains (dont 1 terrain 1x1)",
     "19 joueurs : 5 terrains (dont 1 terrain 2x1)",
-    "20 joueurs : 5 terrains (matchs 2x2)"
+    "20 joueurs : 5 terrains (matchs 2x2)",
+    "21-23 joueurs : 5 terrains + repos"
+  ],
+  6: [
+    "24 joueurs : 6 terrains (matchs 2x2)",
+    "25-27 joueurs : 6 terrains + repos"
+  ],
+  7: [
+    "28 joueurs : 7 terrains (matchs 2x2)",
+    "29-31 joueurs : 7 terrains + repos"
   ]
 };
 
@@ -3026,7 +3225,7 @@ function session2Active() { return SESSION2_ENABLED && TERRAINS === 3; }
 function isImposedGrid() { return CUR_SESSION === 2 && TERRAINS === 3 && !!SESSION2_SMALL_GRIDS[N]; }
 function readNamesFromDOM() {
   const o = {};
-  for (let i = 1; i <= 20; i++) { const el = document.getElementById('player' + i); if (el) o[i] = el.value; }
+  for (let i = 1; i <= MAX_PLAYERS; i++) { const el = document.getElementById('player' + i); if (el) o[i] = el.value; }
   return o;
 }
 function captureCurrentSession() {
@@ -3250,7 +3449,7 @@ function switchSession(k) {
   populatePlayerCountOptions(N);
   buildPlayerInputs();
   const names = st.players || {};
-  for (let i = 1; i <= 20; i++) { const el = document.getElementById('player' + i); if (el && names[i]) el.value = names[i]; }
+  for (let i = 1; i <= MAX_PLAYERS; i++) { const el = document.getElementById('player' + i); if (el && names[i]) el.value = names[i]; }
   updateActiveCount();
   ensurePositions();
   updateSessionUI();
@@ -3351,7 +3550,7 @@ function buildPlayerInputs() {
   if (!container) return;
   
   container.innerHTML = '';
-  for (let i = 1; i <= 20; i++) {
+  for (let i = 1; i <= MAX_PLAYERS; i++) {
     const wrapper = document.createElement('div');
     wrapper.className = 'player-row';
     wrapper.style.display = i <= N ? 'flex' : 'none';
@@ -3363,7 +3562,7 @@ function buildPlayerInputs() {
     container.appendChild(wrapper);
   }
   
-  for (let i = 1; i <= 20; i++) {
+  for (let i = 1; i <= MAX_PLAYERS; i++) {
     const input = document.getElementById('player' + i);
     if (input) {
       input.addEventListener('focus', function() {
@@ -4335,7 +4534,7 @@ function updateStatusBar() {
 }
 
 function getPlayerNumberFromName(name) {
-  for (let i = 1; i <= 20; i++) {
+  for (let i = 1; i <= MAX_PLAYERS; i++) {
     if (getPlayerName(i) === name) return i;
   }
   return 1;
@@ -4806,7 +5005,7 @@ function applyTournamentData(data) {
   buildPlayerInputs();
   
   const curNames = SESS_STORE[CUR_SESSION].players || {};
-  for (let i = 1; i <= 20; i++) {
+  for (let i = 1; i <= MAX_PLAYERS; i++) {
     const el = document.getElementById('player' + i);
     if (el && curNames[i]) {
       el.value = curNames[i];
@@ -4899,7 +5098,7 @@ function doReset() {
   
   populatePlayerCountOptions(12);
   
-  for (let i = 1; i <= 20; i++) {
+  for (let i = 1; i <= MAX_PLAYERS; i++) {
     const el = document.getElementById('player' + i);
     if (el) {
       el.value = 'Joueur ' + i;
@@ -4919,7 +5118,7 @@ function doReset() {
   buildPlayerInputs();
   
   const players = {};
-  for (let i = 1; i <= 20; i++) {
+  for (let i = 1; i <= MAX_PLAYERS; i++) {
     const el = document.getElementById('player' + i);
     if (el) players[i] = el.value;
   }
@@ -5771,7 +5970,7 @@ document.addEventListener('DOMContentLoaded', function() {
     populatePlayerCountOptions(16);
     buildPlayerInputs();
     
-    for (let i = 1; i <= 20; i++) {
+    for (let i = 1; i <= MAX_PLAYERS; i++) {
       const el = document.getElementById('player' + i);
       if (el && !el.value) el.value = 'Joueur ' + i;
     }
@@ -5899,7 +6098,7 @@ document.addEventListener('DOMContentLoaded', function() {
   // ── Champs "Joueurs" : badges, correction automatique, doublons ──
   function playerRows() {
     const out = [];
-    for (let i = 1; i <= 20; i++) {
+    for (let i = 1; i <= MAX_PLAYERS; i++) {
       const el = document.getElementById('player' + i);
       if (el) out.push({ i, el });
     }
