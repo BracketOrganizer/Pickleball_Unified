@@ -584,6 +584,19 @@ function startLicenseesWatch() {
       .slice().sort((a, b) => a.localeCompare(b, 'fr'));
     refreshKnownPlayersDatalist();
     window.dispatchEvent(new CustomEvent('pb-licensees'));
+    // Un admin du groupe remet à niveau licKeys si besoin (première fois, ou
+    // modification faite à la main dans la console) ; la relance du snapshot
+    // après l'écriture ne déclenche plus rien car les clés sont alors identiques.
+    try {
+      if (snap.exists() && typeof isAdmin === 'function' && isAdmin()) {
+        const want = [...new Set(arr.map(pbLicKey).filter(Boolean))].sort();
+        const have = (Array.isArray(snap.data().licKeys) ? snap.data().licKeys : []).slice().sort();
+        if (JSON.stringify(want) !== JSON.stringify(have)) {
+          setDoc(doc(db, 'tournamentStatus', cid('licensees')), { licKeys: want }, { merge: true })
+            .catch(err => console.warn('synchro licKeys:', err));
+        }
+      }
+    } catch (err) { console.warn('synchro licKeys:', err); }
   }, (e) => {
     console.warn('startLicenseesWatch error:', e);
     pbLicUnsub = null;
@@ -600,19 +613,33 @@ window.pbKickWatchers = function () {
   startLicenseesWatch();
 };
 
+// Clé de comparaison d'un nom : insensible aux majuscules, accents, tirets et à
+// l'ordre prénom/nom. Identique à la fonction key() du script « licenciés ».
+// Les clés des licenciés sont stockées dans licensees.licKeys : ce sont elles que
+// les règles Firestore comparent à registrations.licKey pour n'accepter que les
+// licenciés du groupe (sans rendre la liste des noms publique).
+function pbLicKey(s) {
+  return String(s == null ? '' : s).replace(/\s+/g, ' ').trim()
+    .normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLowerCase()
+    .replace(/[^a-z0-9]+/g, ' ').trim().split(' ').filter(Boolean).sort().join(' ');
+}
+window.pbLicKey = pbLicKey;
+
 window.fbAddLicensees = async function (names) {
   if (!isScorer()) throw new Error('Réservé aux rôles admin / scorer.');
   const cleaned = [...new Set((names || []).map(n => (n || '').trim()).filter(Boolean))];
   if (cleaned.length === 0) return;
-  await setDoc(doc(db, 'tournamentStatus', cid('licensees')), { names: arrayUnion(...cleaned) }, { merge: true });
+  const keys = [...new Set(cleaned.map(pbLicKey).filter(Boolean))];
+  await setDoc(doc(db, 'tournamentStatus', cid('licensees')), { names: arrayUnion(...cleaned), licKeys: arrayUnion(...keys) }, { merge: true });
 };
 window.fbSetLicensees = async function (names) {
   if (!isAdmin()) throw new Error('Réservé au rôle admin.');
-  await setDoc(doc(db, 'tournamentStatus', cid('licensees')), { names: names }, { merge: true });
+  const keys = [...new Set((names || []).map(pbLicKey).filter(Boolean))];
+  await setDoc(doc(db, 'tournamentStatus', cid('licensees')), { names: names, licKeys: keys }, { merge: true });
 };
 window.fbRemoveLicensee = async function (name) {
   if (!isAdmin()) throw new Error('Réservé au rôle admin.');
-  await setDoc(doc(db, 'tournamentStatus', cid('licensees')), { names: arrayRemove(name) }, { merge: true });
+  await setDoc(doc(db, 'tournamentStatus', cid('licensees')), { names: arrayRemove(name), licKeys: arrayRemove(pbLicKey(name)) }, { merge: true });
 };
 
 // Les invités ne vont pas dans la liste des noms connus : quand le registre
@@ -709,6 +736,7 @@ window.submitRegistration = async function () {
   try {
     await addDoc(collection(db, 'registrations'), {
       name: name,
+      licKey: pbLicKey(name),
       club: CLUB,
       phone: phoneEl ? phoneEl.value.trim() : '',
       createdAt: serverTimestamp(),
@@ -719,7 +747,12 @@ window.submitRegistration = async function () {
     if (phoneEl) phoneEl.value = '';
     setTimeout(() => { if (typeof closeRegistrationModal === 'function') closeRegistrationModal(); }, 1200);
   } catch (e) {
-    if (msgEl) { msgEl.textContent = 'Erreur : ' + e.message; msgEl.style.color = 'var(--danger)'; }
+    if (msgEl) {
+      msgEl.textContent = (e && e.code === 'permission-denied')
+        ? 'Nom non reconnu parmi les licenciés ' + CLUBS[CLUB] + '. Vérifiez l\'orthographe (nom et prénom) ou contactez l\'organisateur.'
+        : 'Erreur : ' + e.message;
+      msgEl.style.color = 'var(--danger)';
+    }
   }
 };
 
@@ -727,7 +760,7 @@ window.openRegistrationModal = function () {
   const modal = document.getElementById('registrationModal');
   const info = document.getElementById('regInfoLine');
   if (info) {
-    let txt = '';
+    let txt = 'Groupe ' + CLUBS[CLUB] + ' — réservé aux licenciés ' + CLUBS[CLUB] + '. ';
     if (REG_CONFIG && REG_CONFIG.deadline) {
       const d = new Date(REG_CONFIG.deadline);
       if (!isNaN(d.getTime())) txt += 'Inscriptions jusqu\'au ' + d.toLocaleString('fr-FR') + '. ';
@@ -761,11 +794,11 @@ function updateRegistrationButton() {
   btn.style.display = open ? '' : 'none';
   if (note) {
     if (!open && REG_CONFIG && REG_CONFIG.open) {
-      let reason = 'Les inscriptions sont fermées.';
+      let reason = 'Groupe ' + CLUBS[CLUB] + ' : les inscriptions sont fermées.';
       if (REG_CONFIG.deadline && new Date() > new Date(REG_CONFIG.deadline)) {
-        reason = '⏰ La date limite d\'inscription est dépassée.';
+        reason = 'Groupe ' + CLUBS[CLUB] + ' : ⏰ la date limite d\'inscription est dépassée.';
       } else if (REG_CONFIG.maxCount && REG_COUNT >= REG_CONFIG.maxCount) {
-        reason = '✋ Nombre maximal d\'inscrits atteint (' + REG_COUNT + '/' + REG_CONFIG.maxCount + ').';
+        reason = 'Groupe ' + CLUBS[CLUB] + ' : ✋ nombre maximal d\'inscrits atteint (' + REG_COUNT + '/' + REG_CONFIG.maxCount + ').';
       }
       note.textContent = reason;
       note.style.display = '';
@@ -2160,7 +2193,7 @@ document.addEventListener('visibilitychange', () => {
     <div id="authMsg"></div>
 
     <button id="registerOpenBtn" class="btn" style="display:none;background:var(--warning);width:100%;margin-top:14px;font-size:0.95rem" onclick="openRegistrationModal()">
-      <i class="fas fa-pen-to-square"></i> S'inscrire au prochain tournoi
+      <i class="fas fa-pen-to-square"></i> S'inscrire au prochain tournoi — <strong>Groupe <span class="club-name"></span></strong>
     </button>
     <div id="registerClosedNote" style="display:none;text-align:center;font-size:0.75rem;color:#999;margin-top:8px"></div>
 
@@ -2180,7 +2213,7 @@ document.addEventListener('visibilitychange', () => {
 <!-- ═══════════════ MODALE INSCRIPTION ═══════════════ -->
 <div id="registrationModal" class="modal-overlay" style="display:none">
   <div class="modal-box">
-    <h3><i class="fas fa-pen-to-square"></i> Inscription au tournoi</h3>
+    <h3><i class="fas fa-pen-to-square"></i> Inscription au tournoi — <span class="club-name"></span></h3>
     <div id="regInfoLine" style="font-size:0.78rem;color:#777;margin-bottom:8px"></div>
     <input type="text" id="reg_name" class="player-input" placeholder="Nom et prénom" style="margin:6px 0">
     <input type="tel" id="reg_phone" class="player-input" placeholder="Téléphone (optionnel)" style="margin:6px 0">
