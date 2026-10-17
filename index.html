@@ -2036,6 +2036,16 @@ window.fbSaveTournament = async function (payload) {
   }
 };
 
+// Réinitialisation : remplace TOUT le document du tournoi (sans merge). Avec
+// merge:true, Firestore fusionne les objets : un matchScores {} n'efface pas les
+// scores déjà enregistrés, qui réapparaissaient (et avec eux le programme).
+window.fbResetTournament = async function (payload) {
+  if (!isAdmin()) throw new Error('Réservé au rôle admin.');
+  const ref  = doc(db, 'tournament', cid('current'));
+  const meta = { updatedAt: serverTimestamp(), updatedBy: CURRENT_USER ? CURRENT_USER.uid : 'inconnu' };
+  await setDoc(ref, Object.assign({}, payload, meta));
+};
+
 // ══════════════════════════════════════════════════════════
 // PANNEAU ADMIN : GESTION DES COMPTES
 // ══════════════════════════════════════════════════════════
@@ -5155,8 +5165,8 @@ function doReset() {
     const el = document.getElementById('player' + i);
     if (el) players[i] = el.value;
   }
-  if (typeof fbSaveTournament === 'function') {
-    fbSaveTournament({
+  if (typeof fbResetTournament === 'function') {
+    fbResetTournament({
       players: players,
       positions: [],
       TERRAINS: 3,
@@ -5180,6 +5190,7 @@ function doReset() {
   btn.style.background = '';
   
   updateSessionUI();
+  if (typeof ecranOpen !== 'undefined' && ecranOpen) renderEcranPanels();
   showNotice('Réinitialisation complète effectuée');
 }
 
@@ -5540,7 +5551,7 @@ function buildEcranMatchesHTML() {
 
 function buildEcranSessionMatchesHTML() {
   const grid = getGridForN();
-  if (!grid || grid.length === 0) {
+  if (!grid || grid.length === 0 || !hasCurrentData()) {
     return '<p style="text-align:center;opacity:0.6;padding:40px">Le tournoi n\'a pas encore été généré.</p>';
   }
   const r = findCurrentRoundForEcran();
@@ -5858,7 +5869,7 @@ function renderPlayerPickList() {
   }
 
   const players = getActivePlayerNumbers();
-  if (!players.length) {
+  if (!players.length || !hasCurrentData()) {
     body.innerHTML = '<p style="text-align:center;opacity:0.7;padding:30px">Aucun joueur configuré pour le moment.</p>';
     return;
   }
@@ -5892,7 +5903,7 @@ function collectPlayerEntries() {
 // Lignes de déroulement d'un joueur pour la séance courante (globales)
 function playerHistoryRows(playerId) {
   const grid = getGridForN();
-  if (!grid || grid.length === 0) {
+  if (!grid || grid.length === 0 || !hasCurrentData()) {
     return { html: '<p style="opacity:0.7;padding:20px;text-align:center">Le tournoi n\'a pas encore été généré.</p>', found: 0 };
   }
   let html = '';
@@ -5953,7 +5964,7 @@ window.renderPlayerMatchHistory = function (playerId) {
 
   const res = playerHistoryRows(playerId);
   html += res.html;
-  if (res.found === 0 && getGridForN().length > 0) html += '<p style="opacity:0.7;padding:20px;text-align:center">Ce joueur n\'apparaît dans aucun match du planning actuel.</p>';
+  if (res.found === 0 && hasCurrentData() && getGridForN().length > 0) html += '<p style="opacity:0.7;padding:20px;text-align:center">Ce joueur n\'apparaît dans aucun match du planning actuel.</p>';
   html += '</div>';
   body.innerHTML = html;
 };
