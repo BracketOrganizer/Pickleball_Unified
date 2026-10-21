@@ -473,9 +473,11 @@ getRedirectResult(auth).catch((e) => {
 
 // ══════════════════════════════════════════════════════════
 // ÉTAT / RÔLES
-// Rôles : 'admin' | 'scorer' | 'spectateur'
+// Rôles : 'admin' | 'users' | 'scorer' | 'spectateur'
 //   admin     → tout (config terrains/joueurs, tirage, scores, remplacements,
 //               génération, réinitialisation, gestion des comptes)
+//   users     → tout comme l'admin SAUF la gestion des comptes (créer un compte,
+//               comptes existants, attribution des rôles) : réservée à l'admin
 //   scorer    → scores + remplacements de joueurs + génération du tournoi
 //               + saisie des noms de joueurs + config terrains/nombre de
 //               joueurs (le tirage des positions reste réservé à l'admin)
@@ -489,8 +491,9 @@ let tournamentPollInterval = null;
 let unsubUserList   = null;
 let unsubLiveStatus = null;
 
-function isAdmin()  { return USER_ROLES.includes('admin'); }
-function isScorer() { return USER_ROLES.includes('admin') || USER_ROLES.includes('scorer'); }
+function isAdmin()   { return USER_ROLES.includes('admin'); }                          // gestion des comptes uniquement
+function isManager() { return USER_ROLES.includes('admin') || USER_ROLES.includes('users'); } // tous les réglages de l'appli
+function isScorer()  { return isManager() || USER_ROLES.includes('scorer'); }
 function isSpectateurOnly() { return USER_ROLES.includes('spectateur') && !isScorer(); }
 
 // ── Interrupteur admin « Chrono visible sur les mobiles » ───────────────
@@ -588,7 +591,7 @@ function startLicenseesWatch() {
     // modification faite à la main dans la console) ; la relance du snapshot
     // après l'écriture ne déclenche plus rien car les clés sont alors identiques.
     try {
-      if (snap.exists() && typeof isAdmin === 'function' && isAdmin()) {
+      if (snap.exists() && typeof isManager === 'function' && isManager()) {
         const want = [...new Set(arr.map(pbLicKey).filter(Boolean))].sort();
         const have = (Array.isArray(snap.data().licKeys) ? snap.data().licKeys : []).slice().sort();
         if (JSON.stringify(want) !== JSON.stringify(have)) {
@@ -633,12 +636,12 @@ window.fbAddLicensees = async function (names) {
   await setDoc(doc(db, 'tournamentStatus', cid('licensees')), { names: arrayUnion(...cleaned), licKeys: arrayUnion(...keys) }, { merge: true });
 };
 window.fbSetLicensees = async function (names) {
-  if (!isAdmin()) throw new Error('Réservé au rôle admin.');
+  if (!isManager()) throw new Error('Réservé au rôle admin.');
   const keys = [...new Set((names || []).map(pbLicKey).filter(Boolean))];
   await setDoc(doc(db, 'tournamentStatus', cid('licensees')), { names: names, licKeys: keys }, { merge: true });
 };
 window.fbRemoveLicensee = async function (name) {
-  if (!isAdmin()) throw new Error('Réservé au rôle admin.');
+  if (!isManager()) throw new Error('Réservé au rôle admin.');
   await setDoc(doc(db, 'tournamentStatus', cid('licensees')), { names: arrayRemove(name), licKeys: arrayRemove(pbLicKey(name)) }, { merge: true });
 };
 
@@ -693,7 +696,7 @@ function registrationIsOpenNow() {
 window.registrationIsOpenNow = registrationIsOpenNow;
 
 window.adminSaveRegistrationConfig = async function () {
-  if (!isAdmin()) return;
+  if (!isManager()) return;
   const openEl = document.getElementById('reg_open');
   const deadlineEl = document.getElementById('reg_deadline');
   const maxEl = document.getElementById('reg_max');
@@ -709,7 +712,7 @@ window.adminSaveRegistrationConfig = async function () {
 };
 
 window.adminClearRegistrations = async function () {
-  if (!isAdmin()) return;
+  if (!isManager()) return;
   if (!confirm('Effacer toutes les inscriptions de la liste ?')) return;
   try {
     const snap = await getDocs(collection(db, 'registrations'));
@@ -721,7 +724,7 @@ window.adminClearRegistrations = async function () {
 };
 
 window.deleteRegistration = async function (id) {
-  if (!isAdmin()) return;
+  if (!isManager()) return;
   try { await deleteDoc(doc(db, 'registrations', id)); }
   catch (e) { alert('Erreur : ' + e.message); }
 };
@@ -852,7 +855,7 @@ window.refreshAdminRegistrationUI = refreshAdminRegistrationUI;
 // du tournoi : ajuste le nombre de joueurs à la config valide la plus proche
 // et remplit les champs joueur 1..N avec les noms des inscrits, dans l'ordre.
 window.importRegistrationsToPlayers = function () {
-  if (!isAdmin()) { alert('Import réservé au rôle admin (vérifie que tu es bien connecté en admin).'); return; }
+  if (!isManager()) { alert('Import réservé au rôle admin (vérifie que tu es bien connecté en admin).'); return; }
   try {
     const list = window.REG_LIST || [];
     const names = list.map(r => (r.name || '').trim()).filter(Boolean);
@@ -993,7 +996,7 @@ function watchTimerMode() {
   });
 }
 window.toggleChronoPerTerrain = async function () {
-  if (!isAdmin()) return; // choix du mode (chrono unique / par terrain) réservé à l'admin
+  if (!isManager()) return; // choix du mode (chrono unique / par terrain) réservé à l'admin
   const toggle = document.getElementById('chronoPerTerrainToggle');
   const perTerrain = !!(toggle && toggle.checked);
   try {
@@ -1063,7 +1066,7 @@ function reconcileChrono() {
 }
 setInterval(reconcileChrono, 1000);
 window.toggleChronoMobile = async function () {
-  if (!isAdmin()) return;
+  if (!isManager()) return;
   const t = document.getElementById('chronoMobileToggle');
   const on = !!(t && t.checked);
   try { await setDoc(doc(db, 'tournamentStatus', cid('live')), { chronoMobile: on }, { merge: true }); }
@@ -1232,7 +1235,7 @@ window.resetTimer = async function (key) {
 // BILAN DE SAISON (archivage par nombre de terrains)
 // ══════════════════════════════════════════════════════════
 window.archiveCurrentSessionToSeason = async function () {
-  if (!isAdmin()) return;
+  if (!isManager()) return;
   if (!window.lastRankingStats || Object.keys(window.lastRankingStats).length === 0) {
     alert('Calculez d\'abord le classement (onglet Matchs → "Calculer Classement") avant d\'archiver.');
     return;
@@ -1321,7 +1324,7 @@ function renderBilanGroup(terrains, sessions) {
 
   // Liste des séances individuelles archivées : réservé à l'admin, pour
   // pouvoir corriger ou supprimer un archivage fait par erreur.
-  if (isAdmin() && sessions.length > 0) {
+  if (isManager() && sessions.length > 0) {
     html += `<div class="no-print" style="margin-top:10px">
       <div style="font-size:0.75rem;font-weight:700;color:#777;margin-bottom:4px">Séances archivées (${sessions.length}) :</div>
       <div style="display:flex;flex-direction:column;gap:4px">`;
@@ -1347,7 +1350,7 @@ function renderBilanGroup(terrains, sessions) {
 // du document seasonArchive/terrain_N). Relit le document juste avant
 // d'écrire pour éviter d'écraser un archivage ajouté entre-temps.
 window.deleteSeasonSession = async function (terrains, index) {
-  if (!isAdmin()) return;
+  if (!isManager()) return;
   const cached = (window.seasonSessionsCache && window.seasonSessionsCache[terrains]) || [];
   const sess = cached[index];
   if (!sess) return;
@@ -1368,7 +1371,7 @@ window.deleteSeasonSession = async function (terrains, index) {
 // Ouvre un panneau permettant de corriger la date et les stats de chaque
 // joueur pour une séance archivée par erreur.
 window.openEditSeasonSession = function (terrains, index) {
-  if (!isAdmin()) return;
+  if (!isManager()) return;
   const cached = (window.seasonSessionsCache && window.seasonSessionsCache[terrains]) || [];
   const sess = cached[index];
   if (!sess) return;
@@ -1413,7 +1416,7 @@ window.closeEditSeasonSessionModal = function () {
 };
 
 window.saveEditSeasonSession = async function (terrains, index) {
-  if (!isAdmin()) return;
+  if (!isManager()) return;
   const cached = (window.seasonSessionsCache && window.seasonSessionsCache[terrains]) || [];
   const sess = cached[index];
   if (!sess) return;
@@ -1458,7 +1461,7 @@ window.saveEditSeasonSession = async function (terrains, index) {
 // jour la liste des noms connus (suggestion à la saisie) pour que le nom
 // abandonné ne soit plus proposé.
 window.openMergePlayerNamesModal = async function () {
-  if (!isAdmin()) return;
+  if (!isManager()) return;
   let names = new Set(knownPlayerNames || []);
   const archiveNames = new Set();
   try {
@@ -1526,7 +1529,7 @@ window.closeMergePlayerNamesModal = function () {
 };
 
 window.confirmMergePlayerNames = async function () {
-  if (!isAdmin()) return;
+  if (!isManager()) return;
   const fromEl = document.getElementById('mergeFromName');
   const toEl = document.getElementById('mergeToName');
   const oldName = fromEl ? fromEl.value : '';
@@ -1804,6 +1807,7 @@ function showApp() {
 }
 function roleBadgeLabel(roles) {
   if (roles.includes('admin')) return '👑 Admin';
+  if (roles.includes('users')) return '🛠 Users';
   if (roles.includes('scorer')) return '✏️ Scorer';
   return '👁 Spectateur';
 }
@@ -1814,6 +1818,10 @@ function applyRoleUI() {
 
   document.body.classList.toggle('role-spectateur', isSpectateurOnly());
 
+  document.querySelectorAll('[data-role="manager"]').forEach(el => {
+    el.style.display = isManager() ? '' : 'none';
+  });
+  // Réservé aux admins : gestion des comptes (dossier « Comptes » de l'onglet Utilisateurs)
   document.querySelectorAll('[data-role="admin"]').forEach(el => {
     el.style.display = isAdmin() ? '' : 'none';
   });
@@ -1826,13 +1834,13 @@ function applyRoleUI() {
 function updateLiveToggleBadge() {
   const btn = document.getElementById('liveToggleBadge');
   if (!btn) return;
-  if (!isAdmin()) { btn.style.display = 'none'; return; }
+  if (!isManager()) { btn.style.display = 'none'; return; }
   btn.style.display = '';
   btn.textContent = LIVE_OPEN ? '🔴 Live ouvert (cliquer pour fermer)' : '⚪ Live fermé (cliquer pour ouvrir)';
   btn.className = 'live-toggle-badge ' + (LIVE_OPEN ? 'open' : 'closed');
 }
 window.toggleLiveOpen = async function () {
-  if (!isAdmin()) return;
+  if (!isManager()) return;
   try {
     await setDoc(doc(db, 'tournamentStatus', cid('live')), { liveOpen: !LIVE_OPEN }, { merge: true });
   } catch (e) { console.error(e); showNotice('Erreur : ' + e.message); }
@@ -2011,7 +2019,7 @@ window.fbSaveTournament = async function (payload) {
   if (!isScorer()) throw new Error('Lecture seule.');
   const ref  = doc(db, 'tournament', cid('current'));
   const meta = { updatedAt: serverTimestamp(), updatedBy: CURRENT_USER ? CURRENT_USER.uid : 'inconnu' };
-  if (isAdmin()) {
+  if (isManager()) {
     await setDoc(ref, Object.assign({}, payload, meta), { merge: true });
   } else {
     const upd = {
@@ -2040,7 +2048,7 @@ window.fbSaveTournament = async function (payload) {
 // merge:true, Firestore fusionne les objets : un matchScores {} n'efface pas les
 // scores déjà enregistrés, qui réapparaissaient (et avec eux le programme).
 window.fbResetTournament = async function (payload) {
-  if (!isAdmin()) throw new Error('Réservé au rôle admin.');
+  if (!isManager()) throw new Error('Réservé au rôle admin.');
   const ref  = doc(db, 'tournament', cid('current'));
   const meta = { updatedAt: serverTimestamp(), updatedBy: CURRENT_USER ? CURRENT_USER.uid : 'inconnu' };
   await setDoc(ref, Object.assign({}, payload, meta));
@@ -2061,7 +2069,7 @@ window.loadUserList = function () {
       if (!userClubs(u).includes(CLUB)) return;   // utilisateurs des autres groupes : jamais affichés
       const uid = d.id;
       const roles = Array.isArray(u.roles) && u.roles.length ? u.roles : [u.role || 'spectateur'];
-      const icon = { admin: '👑', scorer: '✏️', spectateur: '👁' };
+      const icon = { admin: '👑', users: '🛠', scorer: '✏️', spectateur: '👁' };
       const rolesDisplay = roles.map(r => (icon[r] || '?') + ' ' + r).join(' · ');
       const safeName = (u.name || '').replace(/'/g, "\\'");
       rows += '<tr>'
@@ -2336,16 +2344,16 @@ document.addEventListener('visibilitychange', () => {
         <option value="mauves">Mauves</option>
         <option value="thouare">Thouaré</option>
       </select>
-      <button id="liveToggleBadge" class="live-toggle-badge closed" data-role="admin" style="display:none" onclick="toggleLiveOpen()">Live fermé</button>
+      <button id="liveToggleBadge" class="live-toggle-badge closed" data-role="manager" style="display:none" onclick="toggleLiveOpen()">Live fermé</button>
       <button class="btn danger" style="margin:0;padding:5px 10px" onclick="logout()"><i class="fas fa-right-from-bracket"></i> Déconnexion</button>
     </div>
 
     <div class="controls">
-      <button class="btn" data-role="admin" onclick="shufflePositions()"><i class="fas fa-shuffle"></i> Mélanger</button>
+      <button class="btn" data-role="manager" onclick="shufflePositions()"><i class="fas fa-shuffle"></i> Mélanger</button>
       <button class="btn secondary" data-role="scorer" onclick="generateValidatedTournament()"><i class="fas fa-play"></i> Générer avec Validation</button>
       <button class="btn success" data-role="scorer" onclick="saveData()"><i class="fas fa-save"></i> Sauvegarder</button>
       <button class="btn" style="background:#455a64" onclick="openEcranMode()"><i class="fas fa-tv"></i> Écran</button>
-      <button class="btn danger" data-role="admin" onclick="resetAll()"><i class="fas fa-trash"></i> Réinitialiser</button>
+      <button class="btn danger" data-role="manager" onclick="resetAll()"><i class="fas fa-trash"></i> Réinitialiser</button>
     </div>
     
     <div class="status-bar">
@@ -2373,9 +2381,9 @@ document.addEventListener('visibilitychange', () => {
     <button class="tab-btn" data-tab="matchesTab" onclick="showTab('matchesTab', this)"><i class="fas fa-trophy"></i> Matchs</button>
     <button class="tab-btn" data-tab="rankingTab" onclick="showTab('rankingTab', this)"><i class="fas fa-chart-bar"></i> Classement</button>
     <button class="tab-btn" data-tab="statsTab" onclick="showTab('statsTab', this)"><i class="fas fa-chart-pie"></i> Statistiques</button>
-    <button class="tab-btn" data-tab="bilanTab" data-role="admin" onclick="showTab('bilanTab', this); if (typeof loadSeasonBilan === 'function') loadSeasonBilan();"><i class="fas fa-medal"></i> Bilan saison</button>
+    <button class="tab-btn" data-tab="bilanTab" data-role="manager" onclick="showTab('bilanTab', this); if (typeof loadSeasonBilan === 'function') loadSeasonBilan();"><i class="fas fa-medal"></i> Bilan saison</button>
     <button class="tab-btn" data-tab="reglementTab" onclick="showTab('reglementTab', this)"><i class="fas fa-book"></i> Règlement</button>
-    <button class="tab-btn" data-tab="adminTab" data-role="admin" onclick="showTab('adminTab', this)"><i class="fas fa-user-shield"></i> Utilisateurs</button>
+    <button class="tab-btn" data-tab="adminTab" data-role="manager" onclick="showTab('adminTab', this)"><i class="fas fa-user-shield"></i> Utilisateurs</button>
   </div>
 
   <div id="sessionBar" class="session-bar no-print">
@@ -2385,7 +2393,7 @@ document.addEventListener('visibilitychange', () => {
   </div>
 
   <div id="playersTab" class="tab active">
-    <div class="card" data-role="admin" id="session2Card">
+    <div class="card" data-role="manager" id="session2Card">
       <span class="card-title"><i class="fas fa-clock"></i> 2ème séance (horaire décalé)</span>
       <label style="display:flex;align-items:center;gap:8px;font-size:0.85rem;margin:8px 0;cursor:pointer">
         <input type="checkbox" id="session2Enabled" style="width:18px;height:18px" onchange="toggleSession2()"> Activer la 2ème séance (plus de 16 inscrits)
@@ -2452,10 +2460,10 @@ document.addEventListener('visibilitychange', () => {
   <div id="matchesTab" class="tab">
     <div class="card">
       <span class="card-title"><i class="fas fa-stopwatch"></i> Chrono du match</span>
-      <div data-role="admin" style="text-align:center;margin-bottom:8px;font-size:0.8rem">
+      <div data-role="manager" style="text-align:center;margin-bottom:8px;font-size:0.8rem">
         <label style="cursor:pointer"><input type="checkbox" id="chronoPerTerrainToggle" onchange="toggleChronoPerTerrain()"> Chronos indépendants par terrain (décoché = un seul chrono partagé)</label>
       </div>
-      <div data-role="admin" style="text-align:center;margin-bottom:8px;font-size:0.8rem">
+      <div data-role="manager" style="text-align:center;margin-bottom:8px;font-size:0.8rem">
         <label style="cursor:pointer"><input type="checkbox" id="chronoMobileToggle" checked onchange="toggleChronoMobile()"> 📱 Chrono visible sur les mobiles (décoché = aucune lecture pour les spectateurs ; le chrono reste sur l'écran TV)</label>
       </div>
       <div id="chronoGlobalPanel">
@@ -2545,7 +2553,7 @@ document.addEventListener('visibilitychange', () => {
     </div>
   </div>
 
-  <div id="bilanTab" class="tab" data-role="admin">
+  <div id="bilanTab" class="tab" data-role="manager">
     <div class="card">
       <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:6px">
         <span class="card-title"><i class="fas fa-medal"></i> Bilan de saison</span>
@@ -2624,7 +2632,7 @@ document.addEventListener('visibilitychange', () => {
     </div>
   </div>
 
-  <div id="adminTab" class="tab" data-role="admin">
+  <div id="adminTab" class="tab" data-role="manager">
     <div class="card">
       <span class="card-title"><i class="fas fa-pen-to-square"></i> Inscriptions au tournoi</span>
       <label style="display:flex;align-items:center;gap:8px;font-size:0.85rem;margin:10px 0">
@@ -2690,6 +2698,8 @@ document.addEventListener('visibilitychange', () => {
       </div>
     </div>
 
+    <details id="adminAccountsFolder" data-role="admin" style="margin:10px 0">
+    <summary style="cursor:pointer;font-weight:700;padding:12px;background:#f3e5f5;border-radius:8px;margin-bottom:8px"><i class="fas fa-lock"></i> Comptes et rôles — réservé aux admins</summary>
     <div class="card">
       <span class="card-title"><i class="fas fa-user-plus"></i> Créer un compte</span>
       <input type="text" id="newU_name" class="player-input" placeholder="Nom" style="margin:4px 0">
@@ -2697,6 +2707,7 @@ document.addEventListener('visibilitychange', () => {
       <input type="password" id="newU_pwd" class="player-input" placeholder="Mot de passe (6 car. min)" style="margin:4px 0">
       <div class="role-check-group">
         <label><input type="checkbox" class="newU_roleChk" value="admin"> Admin</label>
+        <label><input type="checkbox" class="newU_roleChk" value="users"> Users</label>
         <label><input type="checkbox" class="newU_roleChk" value="scorer"> Scorer</label>
         <label><input type="checkbox" class="newU_roleChk" value="spectateur"> Spectateur</label>
       </div>
@@ -2717,6 +2728,7 @@ document.addEventListener('visibilitychange', () => {
         <input type="hidden" id="adminUidInput">
         <div class="role-check-group">
           <label><input type="checkbox" class="chgU_roleChk" value="admin"> Admin</label>
+          <label><input type="checkbox" class="chgU_roleChk" value="users"> Users</label>
           <label><input type="checkbox" class="chgU_roleChk" value="scorer"> Scorer</label>
           <label><input type="checkbox" class="chgU_roleChk" value="spectateur"> Spectateur</label>
         </div>
@@ -2726,6 +2738,7 @@ document.addEventListener('visibilitychange', () => {
         <div id="adminRoleMsg" style="min-height:16px;font-size:0.8rem;margin-top:4px;font-weight:600"></div>
       </div>
     </div>
+    </details>
   </div>
 </div>
 
