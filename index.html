@@ -861,7 +861,7 @@ window.importRegistrationsToPlayers = function () {
     const names = list.map(r => (r.name || '').trim()).filter(Boolean);
     if (names.length === 0) { alert('Aucun inscrit à importer pour le moment.'); return; }
 
-    const options = (CUR_SESSION === 2 && TERRAINS === 3) ? PLAYER_OPTIONS_SESSION2 : (PLAYER_OPTIONS_BY_TERRAIN[TERRAINS] || PLAYER_OPTIONS_BY_TERRAIN[5]);
+    const options = playerOptionsForCurrent();
     const validValues = options.map(o => o.value);
     let target = validValues.find(v => v >= names.length);
     let extra = 0;
@@ -1012,7 +1012,7 @@ function applyChronoModeUI() {
     perTerrainPanel.style.display = 'block';
     unwatchTimer('global');
     buildChronoPerTerrainPanel();
-    for (let n = 1; n <= (TERRAINS || 1); n++) watchTimer(String(n));
+    for (let n = 1; n <= pbTerrainsForTimers(); n++) watchTimer(String(n));
   } else {
     globalPanel.style.display = '';
     perTerrainPanel.style.display = 'none';
@@ -1020,11 +1020,13 @@ function applyChronoModeUI() {
     watchTimer('global');
   }
 }
+function pbTerrainsForTimers() { return (typeof pbMaxTerrains === 'function') ? pbMaxTerrains() : (TERRAINS || 1); }
 function buildChronoPerTerrainPanel() {
   const panel = document.getElementById('chronoPerTerrainPanel');
   if (!panel) return;
+  window._pbChronoBuilt = pbTerrainsForTimers();
   let html = '';
-  for (let n = 1; n <= (TERRAINS || 1); n++) {
+  for (let n = 1; n <= pbTerrainsForTimers(); n++) {
     html += `
       <div style="border:1px solid #eee;border-radius:6px;padding:8px;margin:6px 0">
         <div style="font-weight:600;font-size:0.8rem;margin-bottom:4px">Terrain ${n}</div>
@@ -1064,6 +1066,22 @@ function reconcileChrono() {
   const g = document.getElementById('chronoGlobalPanel'), card = g && g.closest('.card');
   if (card) { const d = want ? '' : 'none'; if (card.style.display !== d) card.style.display = d; }
 }
+// Reconstruit les chronos par terrain si le nombre de terrains utilisé change (séance 2, etc.)
+window.pbRefreshChronoTerrains = function () {
+  try {
+    if (!_chronoActive || !TIMER_PER_TERRAIN) return;
+    const n = pbTerrainsForTimers();
+    if (n === window._pbChronoBuilt) return;
+    applyChronoModeUI();
+    for (let i = 1; i <= n; i++) {
+      const st = TIMER_STATES[String(i)];
+      if (!st) continue;
+      const minEl = document.getElementById('chronoMinutes_' + i);
+      if (minEl) minEl.value = Math.round(st.durationSeconds / 60);
+      renderTimerDisplay(String(i));
+    }
+  } catch (e) { console.warn('pbRefreshChronoTerrains:', e); }
+};
 setInterval(reconcileChrono, 1000);
 window.toggleChronoMobile = async function () {
   if (!isManager()) return;
@@ -1236,27 +1254,31 @@ window.resetTimer = async function (key) {
 // ══════════════════════════════════════════════════════════
 window.archiveCurrentSessionToSeason = async function () {
   if (!isManager()) return;
-  if (!window.lastRankingStats || Object.keys(window.lastRankingStats).length === 0) {
-    alert('Calculez d\'abord le classement (onglet Matchs → "Calculer Classement") avant d\'archiver.');
+  // Un seul archivage pour tout le tournoi (séance 1 + séance 2 si activée, tous
+  // terrains confondus), et uniquement les licenciés : les invités (noms absents du
+  // registre) ne sont jamais archivés, même mélangés à des licenciés.
+  if (!(window.PB_LICENSEES && window.PB_LICENSEES.length)) {
+    alert('Aucun licencié enregistré pour ce groupe : impossible de distinguer les invités des licenciés.\nAjoutez les licenciés dans l\'onglet Utilisateurs avant d\'archiver.');
     return;
   }
-  const entries = Object.values(window.lastRankingStats).map(s => ({
-    name: s.name,
-    points: (s.wins * 3) + (s.draws * 2),
-    matches: s.matches,
-    wins: s.wins, draws: s.draws, losses: s.losses,
-    scored: s.scored, conceded: s.conceded
-  })).filter(e => e.matches > 0);
-  if (entries.length === 0) { alert('Aucun match joué à archiver pour cette séance.'); return; }
-  const session = { date: new Date().toISOString(), entries: entries };
-  const key = 'terrain_' + TERRAINS;
+  const a = pbBuildSeasonArchive();
+  if (a.entries.length === 0) {
+    alert('Aucun match de licencié à archiver' + (a.guests ? ' (' + a.guests + ' invité(s) ignoré(s))' : '') + '.');
+    return;
+  }
+  if (a.guestNames && a.guestNames.length) {
+    if (!confirm('Non archivés (invités, absents de la liste des licenciés) :\n' + a.guestNames.join(', ') +
+      '\n\nSi l\'un d\'eux est en fait un licencié (faute de frappe), annulez, corrigez son nom puis recommencez.\n\nArchiver les ' +
+      a.entries.length + ' licencié(s) ?')) return;
+  }
   try {
-    const ref = doc(db, 'seasonArchive', cid(key));
+    const ref = doc(db, 'seasonArchive', cid('terrain_' + a.terrains));
     const snap = await getDoc(ref);
     const sessions = snap.exists() && Array.isArray(snap.data().sessions) ? snap.data().sessions : [];
-    sessions.push(session);
-    await setDoc(ref, { terrains: TERRAINS, sessions: sessions }, { merge: true });
-    showNotice('Séance archivée dans le bilan de saison (' + TERRAINS + ' terrains)');
+    sessions.push({ date: new Date().toISOString(), entries: a.entries });
+    await setDoc(ref, { terrains: a.terrains, sessions: sessions }, { merge: true });
+    showNotice('Archivé dans le bilan de saison (' + a.terrains + ' terrains) : ' + a.entries.length + ' licencié(s)' +
+      (a.guests ? ', ' + a.guests + ' invité(s) exclu(s)' : ''));
     if (typeof loadSeasonBilan === 'function') loadSeasonBilan();
   } catch (e) { alert('Erreur d\'archivage : ' + e.message); }
 };
@@ -2407,8 +2429,10 @@ document.addEventListener('visibilitychange', () => {
         <input type="time" id="sessionTime2" onchange="onSessionTimesChange()" style="padding:8px;border-radius:5px;border:2px solid #ddd;font-size:0.85rem;">
       </div>
       <p style="font-size:0.78rem;color:#777;margin:6px 0">
-        La séance 1 reste inchangée. La séance 2 démarre à <strong>5 joueurs</strong> (programmes spéciaux 5, 6 et 7 joueurs),
-        puis reprend les programmes normaux de 8 à 16 joueurs. Un joueur peut jouer les deux séances : saisissez son nom à
+        Chaque séance a son <strong>propre nombre de terrains (3 à 7)</strong> : affichez la séance voulue avec les boutons
+        « Séance 1 / Séance 2 », puis réglez « Terrains disponibles » dans Configuration. La séance 2 propose en plus les
+        programmes spéciaux <strong>5, 6 et 7 joueurs</strong>, puis les programmes normaux du nombre de terrains choisi.
+        Un joueur peut jouer les deux séances : saisissez son nom à
         l'identique dans les deux listes, ses points sont alors cumulés dans le classement général.
         Basculez d'une séance à l'autre avec les boutons « Séance 1 / Séance 2 » sous les onglets.
       </p>
@@ -2559,7 +2583,7 @@ document.addEventListener('visibilitychange', () => {
         <span class="card-title"><i class="fas fa-medal"></i> Bilan de saison</span>
         <span style="display:flex;gap:6px;flex-wrap:wrap">
           <button class="btn secondary no-print" style="margin:0" onclick="openMergePlayerNamesModal()"><i class="fas fa-code-merge"></i> Fusionner des doublons</button>
-          <button class="btn success no-print" style="margin:0" onclick="archiveCurrentSessionToSeason()"><i class="fas fa-box-archive"></i> Archiver cette séance</button>
+          <button class="btn success no-print" style="margin:0" onclick="archiveCurrentSessionToSeason()"><i class="fas fa-box-archive"></i> Archiver le tournoi (séances 1 + 2, licenciés uniquement)</button>
         </span>
       </div>
       <p style="font-size:0.8rem;color:#777;margin-top:6px">
@@ -3115,7 +3139,7 @@ const MAX_PLAYERS = 31;
 
 // Texte informatif "terrains" affiche lors du changement de nombre de joueurs
 function getTerrainInfoText(terrains, n) {
-  if (terrains === 3 && CUR_SESSION === 2) {
+  if (CUR_SESSION === 2 && n >= 5 && n <= 7) {
     if (n === 5) return "1 terrain + 1 repos par tour";
     if (n === 6) return "2 terrains (dont 1x1)";
     if (n === 7) return "2 terrains (dont 2x1)";
@@ -3203,7 +3227,7 @@ let specialMatchScores = {};
 let saveInFlight = false;
 
 // ══════════════════════════════════════════════════════════
-// 2ÈME SÉANCE (horaire décalé) — 3 TERRAINS UNIQUEMENT
+// 2ÈME SÉANCE (horaire décalé) — nombre de terrains propre à la séance (3 à 7)
 // La séance 1 est inchangée. La séance 2 démarre à 5 joueurs (programmes
 // spéciaux 5/6/7 joueurs) puis reprend les programmes normaux 8 à 16.
 // Principe : les variables globales (N, positions, matchScores, ...)
@@ -3239,16 +3263,33 @@ const SESSION2_SMALL_GRIDS = {
     [{players:[2,7,3,5]},{players:[4,6,1],type:'2x1'}]
   ]
 };
-const PLAYER_OPTIONS_SESSION2 = [
+const PLAYER_OPTIONS_SESSION2_SMALL = [
   {value:5, label:"5 joueurs (1 terrain + repos)"},
   {value:6, label:"6 joueurs (2 terrains - 2x2 + 1x1)"},
   {value:7, label:"7 joueurs (2 terrains - 2x2 + 2x1)"}
-].concat(PLAYER_OPTIONS_BY_TERRAIN[3]);
-const LEGEND_SESSION2 = [
+];
+const PLAYER_OPTIONS_SESSION2 = PLAYER_OPTIONS_SESSION2_SMALL.concat(PLAYER_OPTIONS_BY_TERRAIN[3]);
+// Options de nombre de joueurs de la séance affichée : la séance 2 propose en plus les
+// programmes spéciaux 5/6/7 joueurs, quel que soit son nombre de terrains (3 à 7).
+function playerOptionsForCurrent() {
+  if (CUR_SESSION === 2) return PLAYER_OPTIONS_SESSION2_SMALL.concat(PLAYER_OPTIONS_BY_TERRAIN[TERRAINS] || PLAYER_OPTIONS_BY_TERRAIN[3]);
+  return PLAYER_OPTIONS_BY_TERRAIN[TERRAINS] || PLAYER_OPTIONS_BY_TERRAIN[5];
+}
+// Plus grand nombre de terrains utilisé par une séance (panneaux de chrono par terrain)
+function pbMaxTerrains() {
+  let m = TERRAINS || 1;
+  [1, 2].forEach(function (k) {
+    const st = SESS_STORE[k];
+    if (st && st.TERRAINS && (k === 1 || SESSION2_ENABLED)) m = Math.max(m, st.TERRAINS);
+  });
+  return m;
+}
+const LEGEND_SESSION2_SMALL = [
   "5 joueurs : 1 terrain (2x2) + 1 joueur au repos par tour",
   "6 joueurs : 2 terrains (un match 2x2 + un match 1x1)",
   "7 joueurs : 2 terrains (un match 2x2 + un match 2x1)"
-].concat(LEGEND_BY_TERRAIN[3]);
+];
+const LEGEND_SESSION2 = LEGEND_SESSION2_SMALL.concat(LEGEND_BY_TERRAIN[3]);
 
 let injuries = {};              // blessés : { numéro de position : tour (0-based) à partir duquel il ne joue plus }
 let CUR_SESSION = 1;            // séance affichée / éditée sur cet appareil
@@ -3259,7 +3300,7 @@ let RANK_VIEW = 'all';          // 'all' | '1' | '2'
 const SESS_STORE = { 1: null, 2: null };
 
 function blankSessionState(n) {
-  return { N: n, positions: [], players: {}, matchScores: {}, specialMatchScores: {}, playerReplacements: {}, replacementLog: [], generated: false, injuries: {} };
+  return { N: n, positions: [], players: {}, matchScores: {}, specialMatchScores: {}, playerReplacements: {}, replacementLog: [], generated: false, injuries: {}, TERRAINS: 3 };
 }
 SESS_STORE[2] = blankSessionState(5);
 
@@ -3267,6 +3308,7 @@ function sessionStateFromData(d, defN) {
   d = d || {};
   return {
     N: d.N || defN,
+    TERRAINS: d.TERRAINS || 3,
     positions: Array.isArray(d.positions) ? d.positions : [],
     players: d.players || {},
     matchScores: d.matchScores || {},
@@ -3277,8 +3319,8 @@ function sessionStateFromData(d, defN) {
     injuries: d.injuries || {}
   };
 }
-function session2Active() { return SESSION2_ENABLED && TERRAINS === 3; }
-function isImposedGrid() { return CUR_SESSION === 2 && TERRAINS === 3 && !!SESSION2_SMALL_GRIDS[N]; }
+function session2Active() { return SESSION2_ENABLED; }
+function isImposedGrid() { return CUR_SESSION === 2 && !!SESSION2_SMALL_GRIDS[N]; }
 function readNamesFromDOM() {
   const o = {};
   for (let i = 1; i <= MAX_PLAYERS; i++) { const el = document.getElementById('player' + i); if (el) o[i] = el.value; }
@@ -3286,7 +3328,7 @@ function readNamesFromDOM() {
 }
 function captureCurrentSession() {
   SESS_STORE[CUR_SESSION] = {
-    N: N, positions: positions, players: readNamesFromDOM(),
+    N: N, TERRAINS: TERRAINS, positions: positions, players: readNamesFromDOM(),
     matchScores: matchScores, specialMatchScores: specialMatchScores,
     playerReplacements: playerReplacements, replacementLog: replacementLog,
     generated: tournamentGenerated, injuries: injuries
@@ -3295,6 +3337,7 @@ function captureCurrentSession() {
 function loadStateIntoGlobals(st) {
   injuries = st.injuries || {};
   N = st.N;
+  TERRAINS = st.TERRAINS || 3;
   positions = Array.isArray(st.positions) ? st.positions : [];
   matchScores = st.matchScores || {};
   specialMatchScores = st.specialMatchScores || {};
@@ -3304,7 +3347,7 @@ function loadStateIntoGlobals(st) {
 }
 function withSession(k, fn) {
   if (k === CUR_SESSION) return fn();
-  const saved = { N: N, positions: positions, matchScores: matchScores, specialMatchScores: specialMatchScores,
+  const saved = { N: N, TERRAINS: TERRAINS, positions: positions, matchScores: matchScores, specialMatchScores: specialMatchScores,
     playerReplacements: playerReplacements, replacementLog: replacementLog, generated: tournamentGenerated,
     injuries: injuries, cur: CUR_SESSION, names: NAMES_OVERRIDE };
   const st = SESS_STORE[k] || blankSessionState(k === 2 ? 5 : 12);
@@ -3313,7 +3356,7 @@ function withSession(k, fn) {
   NAMES_OVERRIDE = st.players || {};
   try { return fn(); }
   finally {
-    loadStateIntoGlobals({ N: saved.N, positions: saved.positions, matchScores: saved.matchScores,
+    loadStateIntoGlobals({ N: saved.N, TERRAINS: saved.TERRAINS, positions: saved.positions, matchScores: saved.matchScores,
       specialMatchScores: saved.specialMatchScores, playerReplacements: saved.playerReplacements,
       replacementLog: saved.replacementLog, generated: saved.generated, injuries: saved.injuries });
     CUR_SESSION = saved.cur;
@@ -3430,7 +3473,7 @@ function uniqueMergeKey(registry, name, k, num) {
 }
 function fmtSessTime(t) { return t ? ' · ' + String(t).replace(':', 'h') : ''; }
 function legendForCurrent() {
-  if (CUR_SESSION === 2 && TERRAINS === 3) return LEGEND_SESSION2;
+  if (CUR_SESSION === 2) return LEGEND_SESSION2_SMALL.concat(LEGEND_BY_TERRAIN[TERRAINS] || []);
   return LEGEND_BY_TERRAIN[TERRAINS] || [];
 }
 
@@ -3461,7 +3504,7 @@ function updateSessionUI() {
   const hint = document.getElementById('sessBarHint');
   if (hint) hint.textContent = active ? ('Vous consultez la séance ' + CUR_SESSION) : '';
   const card = document.getElementById('session2Card');
-  if (card) card.classList.toggle('s2-hidden', TERRAINS !== 3);
+  if (card) card.classList.remove('s2-hidden');
   const chk = document.getElementById('session2Enabled');
   if (chk && document.activeElement !== chk) chk.checked = SESSION2_ENABLED;
   const t1 = document.getElementById('sessionTime1'), t2 = document.getElementById('sessionTime2');
@@ -3481,6 +3524,7 @@ function updateSessionUI() {
   }
   updateRankingTitle();
   refreshCrossBadges();
+  if (window.pbRefreshChronoTerrains) window.pbRefreshChronoTerrains();
 }
 
 function refreshRankingIfData() {
@@ -3502,6 +3546,8 @@ function switchSession(k) {
   CUR_SESSION = k;
   const st = SESS_STORE[k] || blankSessionState(k === 2 ? 5 : 12);
   loadStateIntoGlobals(st);
+  const terrSel = document.getElementById('terrainCount');
+  if (terrSel) terrSel.value = String(TERRAINS);
   populatePlayerCountOptions(N);
   buildPlayerInputs();
   const names = st.players || {};
@@ -3515,11 +3561,6 @@ function switchSession(k) {
 function toggleSession2() {
   const chk = document.getElementById('session2Enabled');
   SESSION2_ENABLED = !!(chk && chk.checked);
-  if (SESSION2_ENABLED && TERRAINS !== 3) {
-    SESSION2_ENABLED = false; if (chk) chk.checked = false;
-    showNotice('La 2ème séance n\'existe que pour 3 terrains');
-    return;
-  }
   if (!SESSION2_ENABLED && CUR_SESSION === 2) switchSession(1);
   updateSessionUI();
   refreshRankingIfData();
@@ -3555,7 +3596,7 @@ function populatePlayerCountOptions(preferredN) {
   const select = document.getElementById('playerCount');
   if (!select) return;
   
-  const options = (CUR_SESSION === 2 && TERRAINS === 3) ? PLAYER_OPTIONS_SESSION2 : (PLAYER_OPTIONS_BY_TERRAIN[TERRAINS] || PLAYER_OPTIONS_BY_TERRAIN[5]);
+  const options = playerOptionsForCurrent();
   select.innerHTML = options.map(o => `<option value="${o.value}">${o.label}</option>`).join('');
   
   const validValues = options.map(o => o.value);
@@ -3569,11 +3610,7 @@ function populatePlayerCountOptions(preferredN) {
 
 function changeTerrainCount() {
   const select = document.getElementById('terrainCount');
-  if (CUR_SESSION === 2) {
-    select.value = '3';
-    showNotice('La séance 2 fonctionne uniquement avec 3 terrains. Revenez à la séance 1 pour changer le nombre de terrains.');
-    return;
-  }
+  // Le nombre de terrains se règle pour la séance affichée (séance 1 ou séance 2)
   TERRAINS = parseInt(select.value);
   
   populatePlayerCountOptions(N);
@@ -3775,7 +3812,7 @@ function getGridForN() {
 }
 
 function getBaseGridForN() {
-  if (CUR_SESSION === 2 && TERRAINS === 3 && SESSION2_SMALL_GRIDS[N]) return SESSION2_SMALL_GRIDS[N];
+  if (CUR_SESSION === 2 && SESSION2_SMALL_GRIDS[N]) return SESSION2_SMALL_GRIDS[N];
   const grids = gridsByTerrain[TERRAINS] || gridsByTerrain[5];
   if (grids[N]) return grids[N];
   const firstKey = Object.keys(grids)[0];
@@ -4372,7 +4409,7 @@ function computeStatsCurrent() {
 // Statistiques cumulées par joueur (même nom dans les 2 séances = même joueur).
 // onlySession : 1 ou 2 pour limiter à une seule séance.
 function buildCombinedStats(onlySession) {
-  const sessions = onlySession ? [onlySession] : (session2Active() ? [1, 2] : [1]);
+  const sessions = Array.isArray(onlySession) ? onlySession : (onlySession ? [onlySession] : (session2Active() ? [1, 2] : [1]));
   const merged = {};
   sessions.forEach(function (k) {
     if (!onlySession && k === 2 && !sessionHasData(2)) return;
@@ -4388,6 +4425,34 @@ function buildCombinedStats(onlySession) {
     });
   });
   return merged;
+}
+
+// Archive de saison : une seule entrée pour tout le tournoi (séance 1 + séance 2 si
+// activée et jouée), classée sous le nombre de terrains de la séance 1. Seuls les
+// licenciés du groupe sont retenus (nom canonique du registre) ; les invités sont
+// comptés à part et jamais archivés.
+function pbBuildSeasonArchive() {
+  if (typeof captureCurrentSession === 'function') captureCurrentSession();
+  const sess = [1];
+  if (session2Active() && sessionHasData(2)) sess.push(2);
+  const terrains = withSession(sess[0], function () { return TERRAINS; });
+  const stats = buildCombinedStats(sess);
+  const byName = {};
+  let guests = 0;
+  const guestNames = [];
+  Object.values(stats).forEach(function (st) {
+    if (!(st.matches > 0)) return;
+    const lic = (typeof window.pbFindLicensee === 'function') ? window.pbFindLicensee(st.name) : null;
+    if (!lic) { guests++; guestNames.push(st.name); return; }
+    const e = byName[lic] || (byName[lic] = { name: lic, wins: 0, draws: 0, losses: 0, matches: 0, scored: 0, conceded: 0 });
+    e.wins += st.wins; e.draws += st.draws; e.losses += st.losses;
+    e.matches += st.matches; e.scored += st.scored; e.conceded += st.conceded;
+  });
+  const entries = Object.values(byName).map(function (e) {
+    e.points = (e.wins * 3) + (e.draws * 2);
+    return e;
+  });
+  return { terrains: terrains, entries: entries, guests: guests, guestNames: guestNames };
 }
 
 function calculateRanking() {
@@ -4991,7 +5056,7 @@ function saveData() {
   fbSaveTournament({
     players: players,
     positions: s1.positions,
-    TERRAINS: TERRAINS,
+    TERRAINS: s1.TERRAINS || 3,
     N: s1.N,
     matchScores: s1.matchScores,
     specialMatchScores: s1.specialMatchScores,
@@ -5002,6 +5067,7 @@ function saveData() {
     sessionMeta: { enabled: SESSION2_ENABLED, time1: SESSION_TIMES.time1 || '', time2: SESSION_TIMES.time2 || '' },
     session2: {
       N: s2.N,
+      TERRAINS: s2.TERRAINS || 3,
       positions: s2.positions,
       players: s2.players || {},
       matchScores: s2.matchScores,
@@ -5045,7 +5111,6 @@ function applyTournamentData(data) {
   // modification qu'on venait juste de faire, qui semblait alors n'avoir
   // servi à rien (cas typique : "Importer vers joueurs" qui ne prend pas).
   if (saveInFlight) return;
-  TERRAINS = data.TERRAINS || 3;
   const meta = data.sessionMeta || {};
   SESSION2_ENABLED = !!meta.enabled;
   SESSION_TIMES = { time1: meta.time1 || '', time2: meta.time2 || '' };
@@ -5192,7 +5257,7 @@ function doReset() {
       injuries: {},
       sessionMeta: { enabled: false, time1: '', time2: '' },
       session2: {
-        N: 5, positions: [], players: {}, matchScores: {}, specialMatchScores: {},
+        N: 5, TERRAINS: 3, positions: [], players: {}, matchScores: {}, specialMatchScores: {},
         playerReplacements: {}, replacementLog: [], generated: false, injuries: {}
       }
     }).catch(e => console.error('Erreur reset Firestore:', e));
@@ -6268,7 +6333,7 @@ document.addEventListener('DOMContentLoaded', function() {
       if (m) sel.add(m);
       else if (!guests.some(g => key(g) === key(v))) guests.push(v);
     });
-    const opts = (typeof PLAYER_OPTIONS_BY_TERRAIN !== 'undefined' && PLAYER_OPTIONS_BY_TERRAIN[TERRAINS]) || [];
+    const opts = (typeof playerOptionsForCurrent === 'function') ? playerOptionsForCurrent() : [];
     const max = opts.length ? opts[opts.length - 1].value : 20;
 
     const overlay = document.createElement('div');
