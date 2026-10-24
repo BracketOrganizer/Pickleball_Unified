@@ -1250,7 +1250,7 @@ window.resetTimer = async function (key) {
 };
 
 // ══════════════════════════════════════════════════════════
-// BILAN DE SAISON (archivage par nombre de terrains)
+// BILAN DE SAISON (un seul bilan, tous terrains confondus)
 // ══════════════════════════════════════════════════════════
 window.archiveCurrentSessionToSeason = async function () {
   if (!isManager()) return;
@@ -1272,44 +1272,66 @@ window.archiveCurrentSessionToSeason = async function () {
       a.entries.length + ' licencié(s) ?')) return;
   }
   try {
-    const ref = doc(db, 'seasonArchive', cid('terrain_' + a.terrains));
+    const ref = seasonDocRef('season');
     const snap = await getDoc(ref);
     const sessions = snap.exists() && Array.isArray(snap.data().sessions) ? snap.data().sessions : [];
-    sessions.push({ date: new Date().toISOString(), entries: a.entries });
-    await setDoc(ref, { terrains: a.terrains, sessions: sessions }, { merge: true });
-    showNotice('Archivé dans le bilan de saison (' + a.terrains + ' terrains) : ' + a.entries.length + ' licencié(s)' +
+    sessions.push({ date: new Date().toISOString(), terrains: a.terrains, entries: a.entries });
+    await setDoc(ref, { sessions: sessions }, { merge: true });
+    showNotice('Archivé dans le bilan de saison : ' + a.entries.length + ' licencié(s)' +
       (a.guests ? ', ' + a.guests + ' invité(s) exclu(s)' : ''));
     if (typeof loadSeasonBilan === 'function') loadSeasonBilan();
   } catch (e) { alert('Erreur d\'archivage : ' + e.message); }
 };
+
+// Un seul bilan pour tous les terrains. Les nouveaux archivages sont écrits dans
+// seasonArchive/season ; les anciens documents terrain_3 … terrain_7 restent lus (et
+// modifiables / supprimables) mais s'affichent dans le même bilan, sans être modifiés.
+const SEASON_SOURCES = ['season', 3, 4, 5, 6, 7];
+function seasonDocRef(src) {
+  return doc(db, 'seasonArchive', src === 'season' ? cid('season') : cid('terrain_' + src));
+}
+async function readSeasonItems() {
+  const items = [];
+  for (const src of SEASON_SOURCES) {
+    const snap = await getDoc(seasonDocRef(src));
+    const sessions = snap.exists() && Array.isArray(snap.data().sessions) ? snap.data().sessions : [];
+    sessions.forEach((sess, idx) => items.push({ sess: sess, src: src, idx: idx }));
+  }
+  const ts = it => { const t = new Date(it.sess.date).getTime(); return isNaN(t) ? Infinity : t; };
+  items.sort((x, y) => ts(x) - ts(y));
+  return items;
+}
+function seasonItem(k) {
+  const c = window.seasonSessionsCache;
+  return (c && Array.isArray(c.items)) ? c.items[k] : null;
+}
+async function freshSeasonSessions(item) {
+  const ref = seasonDocRef(item.src);
+  const snap = await getDoc(ref);
+  const cur = snap.exists() && Array.isArray(snap.data().sessions) ? snap.data().sessions : [];
+  return { ref: ref, cur: cur };
+}
 
 window.loadSeasonBilan = async function () {
   const container = document.getElementById('bilanSaisonContent');
   if (!container) return;
   container.innerHTML = '<p style="text-align:center;color:#666;padding:20px">Chargement du bilan…</p>';
   try {
-    const groups = [3, 4, 5, 6, 7];
-    let html = '';
-    window.seasonSessionsCache = window.seasonSessionsCache || {};
-    for (const t of groups) {
-      const ref = doc(db, 'seasonArchive', cid('terrain_' + t));
-      const snap = await getDoc(ref);
-      const sessions = snap.exists() && Array.isArray(snap.data().sessions) ? snap.data().sessions : [];
-      window.seasonSessionsCache[t] = sessions;
-      html += renderBilanGroup(t, sessions);
-    }
-    container.innerHTML = html;
+    const items = await readSeasonItems();
+    window.seasonSessionsCache = { items: items };
+    container.innerHTML = renderBilanGroup(items);
   } catch (e) {
     container.innerHTML = '<p style="color:var(--danger);text-align:center;padding:20px">Erreur de chargement : ' + e.message + '</p>';
   }
 };
 
-function renderBilanGroup(terrains, sessions) {
-  const title = 'Terrains disponibles : ' + terrains;
-  if (!sessions || sessions.length === 0) {
-    return `<div class="card bilan-group" id="bilanGroup${terrains}">
+function renderBilanGroup(items) {
+  const title = 'Bilan de saison — tous terrains';
+  const sessions = (items || []).map(it => it.sess);
+  if (sessions.length === 0) {
+    return `<div class="card bilan-group" id="bilanGroupAll">
       <span class="card-title"><i class="fas fa-border-all"></i> ${title}</span>
-      <p style="text-align:center;color:#999;padding:14px;font-size:0.85rem">Aucune séance archivée pour cette configuration.</p>
+      <p style="text-align:center;color:#999;padding:14px;font-size:0.85rem">Aucune séance archivée pour le moment.</p>
     </div>`;
   }
   const agg = {};
@@ -1329,10 +1351,10 @@ function renderBilanGroup(terrains, sessions) {
     avgMatches: a.presences ? (a.matches / a.presences) : 0
   })).sort((a, b) => b.points - a.points);
 
-  let html = `<div class="card bilan-group" id="bilanGroup${terrains}">
+  let html = `<div class="card bilan-group" id="bilanGroupAll">
     <div style="display:flex;justify-content:space-between;align-items:center;flex-wrap:wrap;gap:6px">
       <span class="card-title"><i class="fas fa-border-all"></i> ${title}</span>
-      <button class="btn secondary no-print" style="margin:0" onclick="printSection('bilanGroup${terrains}')"><i class="fas fa-print"></i> Imprimer</button>
+      <button class="btn secondary no-print" style="margin:0" onclick="printSection('bilanGroupAll')"><i class="fas fa-print"></i> Imprimer</button>
     </div>
     <div style="font-size:0.75rem;color:#777;margin-bottom:6px">${sessions.length} séance(s) archivée(s)</div>
     <div style="overflow-x:auto;">
@@ -1350,14 +1372,15 @@ function renderBilanGroup(terrains, sessions) {
     html += `<div class="no-print" style="margin-top:10px">
       <div style="font-size:0.75rem;font-weight:700;color:#777;margin-bottom:4px">Séances archivées (${sessions.length}) :</div>
       <div style="display:flex;flex-direction:column;gap:4px">`;
-    sessions.forEach((sess, idx) => {
+    items.forEach((it, k) => {
+      const sess = it.sess;
       const d = new Date(sess.date);
       const dateLabel = isNaN(d.getTime()) ? (sess.date || '?') : d.toLocaleString('fr-FR');
       html += `<div style="display:flex;justify-content:space-between;align-items:center;gap:6px;background:#f8f9fa;padding:5px 8px;border-radius:6px;font-size:0.75rem">
         <span>${dateLabel} — ${(sess.entries || []).length} joueur(s)</span>
         <span style="display:flex;gap:4px;flex-shrink:0">
-          <button class="btn secondary" style="margin:0;padding:3px 8px;font-size:0.7rem" onclick="openEditSeasonSession(${terrains}, ${idx})"><i class="fas fa-pen"></i></button>
-          <button class="btn" style="margin:0;padding:3px 8px;font-size:0.7rem;background:var(--danger);color:white" onclick="deleteSeasonSession(${terrains}, ${idx})"><i class="fas fa-trash"></i></button>
+          <button class="btn secondary" style="margin:0;padding:3px 8px;font-size:0.7rem" onclick="openEditSeasonSession(${k})"><i class="fas fa-pen"></i></button>
+          <button class="btn" style="margin:0;padding:3px 8px;font-size:0.7rem;background:var(--danger);color:white" onclick="deleteSeasonSession(${k})"><i class="fas fa-trash"></i></button>
         </span>
       </div>`;
     });
@@ -1368,23 +1391,24 @@ function renderBilanGroup(terrains, sessions) {
   return html;
 }
 
-// Supprime une séance archivée par erreur (index dans le tableau 'sessions'
-// du document seasonArchive/terrain_N). Relit le document juste avant
-// d'écrire pour éviter d'écraser un archivage ajouté entre-temps.
-window.deleteSeasonSession = async function (terrains, index) {
+// Supprime une séance archivée par erreur. Relit le document juste avant d'écrire
+// pour ne pas écraser un archivage ajouté entre-temps.
+window.deleteSeasonSession = async function (k) {
   if (!isManager()) return;
-  const cached = (window.seasonSessionsCache && window.seasonSessionsCache[terrains]) || [];
-  const sess = cached[index];
-  if (!sess) return;
-  const d = new Date(sess.date);
-  const label = isNaN(d.getTime()) ? (sess.date || '') : d.toLocaleString('fr-FR');
-  if (!confirm('Supprimer la séance archivée du ' + label + ' (' + terrains + ' terrains) ? Cette action est irréversible.')) return;
+  const item = seasonItem(k);
+  if (!item) return;
+  const d = new Date(item.sess.date);
+  const label = isNaN(d.getTime()) ? (item.sess.date || '') : d.toLocaleString('fr-FR');
+  if (!confirm('Supprimer la séance archivée du ' + label + ' ? Cette action est irréversible.')) return;
   try {
-    const ref = doc(db, 'seasonArchive', cid('terrain_' + terrains));
-    const snap = await getDoc(ref);
-    const current = snap.exists() && Array.isArray(snap.data().sessions) ? snap.data().sessions : [];
-    current.splice(index, 1);
-    await setDoc(ref, { terrains: terrains, sessions: current }, { merge: true });
+    const { ref, cur } = await freshSeasonSessions(item);
+    if (!cur[item.idx] || cur[item.idx].date !== item.sess.date) {
+      alert('Cette séance a changé entre-temps (modifiée ou supprimée ailleurs). Le bilan va être rechargé.');
+      loadSeasonBilan();
+      return;
+    }
+    cur.splice(item.idx, 1);
+    await setDoc(ref, { sessions: cur }, { merge: true });
     showNotice('Séance supprimée du bilan de saison');
     loadSeasonBilan();
   } catch (e) { alert('Erreur : ' + e.message); }
@@ -1392,11 +1416,11 @@ window.deleteSeasonSession = async function (terrains, index) {
 
 // Ouvre un panneau permettant de corriger la date et les stats de chaque
 // joueur pour une séance archivée par erreur.
-window.openEditSeasonSession = function (terrains, index) {
+window.openEditSeasonSession = function (k) {
   if (!isManager()) return;
-  const cached = (window.seasonSessionsCache && window.seasonSessionsCache[terrains]) || [];
-  const sess = cached[index];
-  if (!sess) return;
+  const item = seasonItem(k);
+  if (!item) return;
+  const sess = item.sess;
   const d = new Date(sess.date);
   const dateInputValue = isNaN(d.getTime()) ? '' : new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
   const rowsHtml = (sess.entries || []).map((e, i) => `
@@ -1426,7 +1450,7 @@ window.openEditSeasonSession = function (terrains, index) {
       </div>
       <div style="display:flex;gap:8px;margin-top:14px">
         <button class="btn secondary" style="flex:1;margin:0" onclick="closeEditSeasonSessionModal()">Annuler</button>
-        <button class="btn success" style="flex:1;margin:0" onclick="saveEditSeasonSession(${terrains}, ${index})">Enregistrer</button>
+        <button class="btn success" style="flex:1;margin:0" onclick="saveEditSeasonSession(${k})">Enregistrer</button>
       </div>
     </div>`;
   document.body.appendChild(overlay);
@@ -1437,11 +1461,11 @@ window.closeEditSeasonSessionModal = function () {
   if (el) el.remove();
 };
 
-window.saveEditSeasonSession = async function (terrains, index) {
+window.saveEditSeasonSession = async function (k) {
   if (!isManager()) return;
-  const cached = (window.seasonSessionsCache && window.seasonSessionsCache[terrains]) || [];
-  const sess = cached[index];
-  if (!sess) return;
+  const item = seasonItem(k);
+  if (!item) return;
+  const sess = item.sess;
   const dateEl = document.getElementById('editSessDate');
   const newDate = dateEl && dateEl.value ? new Date(dateEl.value).toISOString() : sess.date;
   const newEntries = (sess.entries || []).map((e, i) => {
@@ -1459,17 +1483,15 @@ window.saveEditSeasonSession = async function (terrains, index) {
     });
   });
   try {
-    const ref = doc(db, 'seasonArchive', cid('terrain_' + terrains));
-    const snap = await getDoc(ref);
-    const current = snap.exists() && Array.isArray(snap.data().sessions) ? snap.data().sessions : [];
-    if (!current[index]) {
+    const { ref, cur } = await freshSeasonSessions(item);
+    if (!cur[item.idx] || cur[item.idx].date !== sess.date) {
       alert('Cette séance n\'existe plus (déjà modifiée ou supprimée ailleurs).');
       closeEditSeasonSessionModal();
       loadSeasonBilan();
       return;
     }
-    current[index] = Object.assign({}, current[index], { date: newDate, entries: newEntries });
-    await setDoc(ref, { terrains: terrains, sessions: current }, { merge: true });
+    cur[item.idx] = Object.assign({}, cur[item.idx], { date: newDate, entries: newEntries });
+    await setDoc(ref, { sessions: cur }, { merge: true });
     closeEditSeasonSessionModal();
     showNotice('Séance modifiée');
     loadSeasonBilan();
@@ -1477,8 +1499,8 @@ window.saveEditSeasonSession = async function (terrains, index) {
 };
 
 // Fusion de doublons (ex. "Jean Dupont" / "Jean Dupond") dans le Bilan de
-// saison : renomme toutes les occurrences d'un nom en un autre, sur les 3
-// configurations de terrains à la fois, en cumulant les statistiques si les
+// saison : renomme toutes les occurrences d'un nom en un autre, dans tous les
+// documents d'archive, en cumulant les statistiques si les
 // deux noms apparaissent déjà dans une même séance archivée. Met aussi à
 // jour la liste des noms connus (suggestion à la saisie) pour que le nom
 // abandonné ne soit plus proposé.
@@ -1487,8 +1509,8 @@ window.openMergePlayerNamesModal = async function () {
   let names = new Set(knownPlayerNames || []);
   const archiveNames = new Set();
   try {
-    for (const t of [3, 4, 5, 6, 7]) {
-      const snap = await getDoc(doc(db, 'seasonArchive', cid('terrain_' + t)));
+    for (const src of SEASON_SOURCES) {
+      const snap = await getDoc(seasonDocRef(src));
       const sessions = snap.exists() && Array.isArray(snap.data().sessions) ? snap.data().sessions : [];
       sessions.forEach(sess => (sess.entries || []).forEach(e => { if (e.name) { names.add(e.name); archiveNames.add(e.name); } }));
     }
@@ -1562,8 +1584,8 @@ window.confirmMergePlayerNames = async function () {
   }
   if (!confirm(`Remplacer "${oldName}" par "${newName}" dans tout le bilan de saison ? Cette action est irréversible.`)) return;
   try {
-    for (const t of [3, 4, 5, 6, 7]) {
-      const ref = doc(db, 'seasonArchive', cid('terrain_' + t));
+    for (const src of SEASON_SOURCES) {
+      const ref = seasonDocRef(src);
       const snap = await getDoc(ref);
       if (!snap.exists()) continue;
       const sessions = Array.isArray(snap.data().sessions) ? snap.data().sessions : [];
@@ -1599,7 +1621,7 @@ window.confirmMergePlayerNames = async function () {
         return Object.assign({}, sess, { entries: newEntries });
       });
       if (changed) {
-        await setDoc(ref, { terrains: t, sessions: newSessions }, { merge: true });
+        await setDoc(ref, { sessions: newSessions }, { merge: true });
       }
     }
     // Le nom abandonné ne doit plus être suggéré à la saisie.
@@ -2587,8 +2609,8 @@ document.addEventListener('visibilitychange', () => {
         </span>
       </div>
       <p style="font-size:0.8rem;color:#777;margin-top:6px">
-        Analyse cumulée de la saison (présences, points cumulés, moyennes), calculée séparément pour
-        chaque configuration de <strong>terrains disponibles</strong> afin de rester comparable d'une séance à l'autre.
+        Analyse cumulée de la saison (présences, points cumulés, moyennes) : <strong>un seul bilan, tous terrains
+        confondus</strong>. Seuls les licenciés sont archivés (les invités ne sont jamais comptés).
       </p>
     </div>
     <div id="bilanSaisonContent">
